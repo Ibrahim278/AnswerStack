@@ -8,6 +8,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
     "fastapi>=0.135.2",
+    "openai>=2.29.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "pymupdf4llm>=1.27.2.2",

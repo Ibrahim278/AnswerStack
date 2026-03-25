@@ -55,6 +55,17 @@ class ConflictError(AppError):
         )
 
 
+class ProviderError(AppError):
+    def __init__(self, message: str, retryable: bool = True):
+        super().__init__(
+            error_code="provider.unavailable",
+            message=message,
+            status_code=503,
+            retryable=retryable,
+            suggested_action="Check the provider configuration and ensure the provider is running.",
+        )
+
+
 def _get_request_id() -> str | None:
     try:
         ctx = structlog.contextvars.get_contextvars()

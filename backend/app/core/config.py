@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 50
     document_storage_path: str = "data/documents"
 
+    # Provider defaults (overridden at runtime via DB settings table)
+    default_provider_url: str = "http://localhost:1234/v1"
+    default_provider_api_key: str = ""
+    default_provider_model: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
