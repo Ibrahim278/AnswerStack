@@ -24,3 +24,5 @@ class ProjectResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_used_at: datetime | None
+    last_indexed_at: datetime | None
+    index_status: str
