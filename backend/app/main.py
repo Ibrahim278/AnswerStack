@@ -25,9 +25,14 @@ async def lifespan(app: FastAPI):
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
 
+    # Ensure document storage directory exists
+    doc_storage = Path(settings.document_storage_path)
+    doc_storage.mkdir(parents=True, exist_ok=True)
+
     # Store on app.state for dependency access
     app.state.engine = engine
     app.state.session_factory = session_factory
+    app.state.settings = settings
 
     logger = structlog.get_logger()
     logger.info("Application started", app_name=settings.app_name, database_url=settings.database_url)
