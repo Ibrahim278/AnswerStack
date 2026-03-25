@@ -46,6 +46,19 @@ class VectorRepository(ABC):
         """Return the number of embeddings in the project's collection."""
         ...
 
+    @abstractmethod
+    def query(
+        self,
+        project_id: UUID,
+        query_embedding: list[float],
+        n_results: int = 20,
+    ) -> dict:
+        """Query collection by embedding similarity.
+
+        Returns dict with keys: ids, documents, metadatas, distances (all lists, row-major).
+        """
+        ...
+
 
 class ChromaDBVectorRepository(VectorRepository):
     """Concrete VectorRepository backed by ChromaDB PersistentClient."""
@@ -108,3 +121,25 @@ class ChromaDBVectorRepository(VectorRepository):
             return collection.count()
         except Exception:
             return 0
+
+    def query(
+        self,
+        project_id: UUID,
+        query_embedding: list[float],
+        n_results: int = 20,
+    ) -> dict:
+        collection = self._client.get_collection(
+            name=self._collection_name(project_id),
+        )
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"],
+        )
+        # ChromaDB returns column-major: results["ids"][0], etc.
+        return {
+            "ids": results["ids"][0] if results["ids"] else [],
+            "documents": results["documents"][0] if results["documents"] else [],
+            "metadatas": results["metadatas"][0] if results["metadatas"] else [],
+            "distances": results["distances"][0] if results["distances"] else [],
+        }
