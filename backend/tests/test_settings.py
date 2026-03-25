@@ -1,0 +1,204 @@
+"""Integration tests for settings API.
+
+Covers SET-01 through SET-05 and PROV-01 (provider config via settings).
+"""
+
+
+# --- SET-01: Get and update settings ---
+
+
+async def test_get_settings_returns_defaults(async_client):
+    """SET-01: GET /api/v1/settings returns 200 with default values."""
+    response = await async_client.get("/api/v1/settings")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["temperature"] == 0.7
+    assert data["chunk_size"] == 4000
+    assert data["chunk_overlap"] == 800
+    assert data["top_k"] == 5
+    assert data["similarity_threshold"] == 0.3
+    assert data["reranker_enabled"] is True
+    assert data["provider_url"] == "http://localhost:1234/v1"
+    assert data["provider_api_key"] == ""
+    assert data["provider_model"] == ""
+    assert data["embedding_model"] == ""
+    assert data["provider_capabilities"] is None
+    assert "updated_at" in data
+    assert "id" in data
+
+
+async def test_update_basic_settings(async_client):
+    """SET-01: PUT /api/v1/settings with basic fields returns 200 with updated values."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"temperature": 0.5, "system_prompt": "Custom prompt"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["temperature"] == 0.5
+    assert data["system_prompt"] == "Custom prompt"
+
+
+# --- SET-02: Advanced settings ---
+
+
+async def test_update_advanced_settings(async_client):
+    """SET-02: PUT /api/v1/settings with advanced fields returns 200."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={
+            "chunk_size": 2000,
+            "chunk_overlap": 400,
+            "top_k": 10,
+            "reranker_enabled": False,
+            "similarity_threshold": 0.5,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["chunk_size"] == 2000
+    assert data["chunk_overlap"] == 400
+    assert data["top_k"] == 10
+    assert data["reranker_enabled"] is False
+    assert data["similarity_threshold"] == 0.5
+
+
+# --- PROV-01: Provider configuration ---
+
+
+async def test_update_provider_settings(async_client):
+    """PROV-01: PUT /api/v1/settings with provider fields returns 200."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={
+            "provider_url": "http://localhost:8080/v1",
+            "provider_api_key": "sk-test",
+            "provider_model": "gpt-4",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider_url"] == "http://localhost:8080/v1"
+    assert data["provider_api_key"] == "sk-test"
+    assert data["provider_model"] == "gpt-4"
+
+
+# --- SET-03 / SET-05: Validation ---
+
+
+async def test_validation_temperature_out_of_range(async_client):
+    """SET-03/SET-05: Temperature > 2.0 returns 422."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"temperature": 5.0},
+    )
+    assert response.status_code == 422
+
+    # Also test negative
+    response2 = await async_client.put(
+        "/api/v1/settings",
+        json={"temperature": -1.0},
+    )
+    assert response2.status_code == 422
+
+
+async def test_validation_chunk_size_too_small(async_client):
+    """SET-03: chunk_size < 100 returns 422."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"chunk_size": 10},
+    )
+    assert response.status_code == 422
+
+
+async def test_validation_chunk_overlap_exceeds_chunk_size(async_client):
+    """SET-03: chunk_overlap >= chunk_size returns 422."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"chunk_size": 1000, "chunk_overlap": 1500},
+    )
+    assert response.status_code == 422
+
+
+async def test_validation_top_k_zero(async_client):
+    """SET-03: top_k must be >= 1, so 0 returns 422."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"top_k": 0},
+    )
+    assert response.status_code == 422
+
+
+async def test_validation_similarity_threshold_negative(async_client):
+    """SET-03: similarity_threshold < 0 returns 422."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"similarity_threshold": -0.1},
+    )
+    assert response.status_code == 422
+
+
+# --- SET-04: Reset settings ---
+
+
+async def test_reset_settings_restores_defaults(async_client):
+    """SET-04: PUT custom values, then PUT /settings/reset restores defaults."""
+    # First, get original defaults
+    original = await async_client.get("/api/v1/settings")
+    original_data = original.json()
+
+    # Update with custom values
+    await async_client.put(
+        "/api/v1/settings",
+        json={"temperature": 0.1, "chunk_size": 500, "top_k": 20},
+    )
+
+    # Verify custom values took effect
+    updated = await async_client.get("/api/v1/settings")
+    assert updated.json()["temperature"] == 0.1
+
+    # Reset
+    reset_response = await async_client.put("/api/v1/settings/reset")
+    assert reset_response.status_code == 200
+    reset_data = reset_response.json()
+
+    assert reset_data["temperature"] == original_data["temperature"]
+    assert reset_data["chunk_size"] == original_data["chunk_size"]
+    assert reset_data["top_k"] == original_data["top_k"]
+    assert reset_data["provider_url"] == original_data["provider_url"]
+    assert reset_data["reranker_enabled"] == original_data["reranker_enabled"]
+
+
+# --- SET-01 continued: Partial update and empty update ---
+
+
+async def test_partial_update_preserves_other_fields(async_client):
+    """SET-01: PUT with only temperature does not change other fields."""
+    # Get current state
+    before = await async_client.get("/api/v1/settings")
+    before_data = before.json()
+
+    # Update only temperature
+    await async_client.put("/api/v1/settings", json={"temperature": 0.3})
+
+    # Verify other fields unchanged
+    after = await async_client.get("/api/v1/settings")
+    after_data = after.json()
+    assert after_data["temperature"] == 0.3
+    assert after_data["chunk_size"] == before_data["chunk_size"]
+    assert after_data["top_k"] == before_data["top_k"]
+    assert after_data["provider_url"] == before_data["provider_url"]
+    assert after_data["system_prompt"] == before_data["system_prompt"]
+
+
+async def test_empty_update_returns_current(async_client):
+    """SET-01: PUT with empty body {} returns 200 with current values unchanged."""
+    before = await async_client.get("/api/v1/settings")
+    before_data = before.json()
+
+    response = await async_client.put("/api/v1/settings", json={})
+    assert response.status_code == 200
+    after_data = response.json()
+    assert after_data["temperature"] == before_data["temperature"]
+    assert after_data["chunk_size"] == before_data["chunk_size"]

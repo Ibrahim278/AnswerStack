@@ -2,6 +2,7 @@ import asyncio
 import os
 import tempfile
 from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pymupdf
@@ -99,3 +100,69 @@ def sample_pdf_bytes() -> bytes:
     pdf_bytes = doc.tobytes()
     doc.close()
     return pdf_bytes
+
+
+@pytest.fixture
+def mock_openai_client():
+    """Mock AsyncOpenAI client for provider tests."""
+    client = AsyncMock()
+
+    # Mock models.list()
+    mock_model = MagicMock()
+    mock_model.id = "test-model-1"
+    mock_model.owned_by = "test-owner"
+    mock_model_2 = MagicMock()
+    mock_model_2.id = "text-embedding-test"
+    mock_model_2.owned_by = "test-owner"
+    mock_models_response = MagicMock()
+    mock_models_response.data = [mock_model, mock_model_2]
+    client.models.list = AsyncMock(return_value=mock_models_response)
+
+    # Mock chat.completions.create()
+    mock_choice = MagicMock()
+    mock_choice.message.content = "test response"
+    mock_completion = MagicMock()
+    mock_completion.choices = [mock_choice]
+    client.chat.completions.create = AsyncMock(return_value=mock_completion)
+
+    # Mock embeddings.create()
+    mock_embedding_data = MagicMock()
+    mock_embedding_data.embedding = [0.1] * 384
+    mock_embed_response = MagicMock()
+    mock_embed_response.data = [mock_embedding_data]
+    client.embeddings.create = AsyncMock(return_value=mock_embed_response)
+
+    # Mock with_options to return self (for test timeouts)
+    client.with_options = MagicMock(return_value=client)
+
+    return client
+
+
+@pytest.fixture
+async def async_client_with_provider(async_engine, mock_openai_client) -> AsyncGenerator[AsyncClient, None]:
+    """Create an httpx AsyncClient with a mocked provider service."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        get_settings.cache_clear()
+        os.environ["DOCUMENT_STORAGE_PATH"] = tmp_dir
+
+        app = create_app()
+        session_factory = async_sessionmaker(async_engine, expire_on_commit=False)
+        app.state.engine = async_engine
+        app.state.session_factory = session_factory
+        app.state.settings = get_settings()
+
+        # Configure provider service with mock client
+        from app.services.provider import ProviderService
+
+        provider_service = ProviderService()
+        provider_service._client = mock_openai_client
+        provider_service._current_base_url = "http://mock-provider:1234/v1"
+        provider_service._current_api_key = "mock-key"
+        app.state.provider_service = provider_service
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+
+        get_settings.cache_clear()
+        os.environ.pop("DOCUMENT_STORAGE_PATH", None)
