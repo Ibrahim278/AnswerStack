@@ -237,6 +237,105 @@ async def async_client_with_indexing(
         os.environ.pop("DOCUMENT_STORAGE_PATH", None)
 
 
+# ---------------------------------------------------------------------------
+# Chat-specific fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_ranker():
+    """Mock FlashRank Ranker for retrieval tests."""
+    ranker = MagicMock()
+
+    def mock_rerank(request):
+        # Return passages with scores, sorted descending
+        return [
+            {**p, "score": 0.9 - i * 0.1}
+            for i, p in enumerate(request.passages[:5])
+        ]
+
+    ranker.rerank = MagicMock(side_effect=mock_rerank)
+    return ranker
+
+
+@pytest.fixture
+async def async_client_with_chat(
+    async_engine, mock_openai_client, mock_vector_repo, mock_embedding_service, mock_ranker
+) -> AsyncGenerator[AsyncClient, None]:
+    """Client with mocked provider, vector repo, embedding service, and ranker for chat tests."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        get_settings.cache_clear()
+        os.environ["DOCUMENT_STORAGE_PATH"] = tmp_dir
+
+        app = create_app()
+        session_factory = async_sessionmaker(async_engine, expire_on_commit=False)
+        app.state.engine = async_engine
+        app.state.session_factory = session_factory
+        app.state.settings = get_settings()
+
+        # Configure provider service with mock client
+        from app.services.provider import ProviderService
+
+        provider_service = ProviderService()
+        provider_service._client = mock_openai_client
+        provider_service._current_base_url = "http://mock-provider:1234/v1"
+        provider_service._current_api_key = "mock-key"
+        app.state.provider_service = provider_service
+
+        # Add indexing infrastructure
+        app.state.vector_repo = mock_vector_repo
+        app.state.embedding_service = mock_embedding_service
+        app.state.ranker = mock_ranker
+
+        # Configure mock_vector_repo.query to return test chunks
+        mock_vector_repo.query = MagicMock(return_value={
+            "ids": ["chunk-1", "chunk-2", "chunk-3"],
+            "documents": [
+                "Paris is the capital of France.",
+                "France is a country in Western Europe.",
+                "The Eiffel Tower is located in Paris.",
+            ],
+            "metadatas": [
+                {"document_name": "geography.txt", "document_id": "doc-1", "chunk_index": 0},
+                {"document_name": "geography.txt", "document_id": "doc-1", "chunk_index": 1},
+                {"document_name": "landmarks.txt", "document_id": "doc-2", "chunk_index": 0},
+            ],
+            "distances": [0.1, 0.3, 0.5],
+        })
+
+        # Configure mock streaming response for chat.completions.create
+        async def _make_mock_stream(*args, **kwargs):
+            """Async iterator that yields mock streaming chunks."""
+            chunks_data = ["Hello", " from", " the", " assistant"]
+            for text in chunks_data:
+                chunk = MagicMock()
+                chunk.choices = [MagicMock()]
+                chunk.choices[0].delta.content = text
+                chunk.choices[0].finish_reason = None
+                yield chunk
+            # Final chunk with finish_reason
+            final = MagicMock()
+            final.choices = [MagicMock()]
+            final.choices[0].delta.content = None
+            final.choices[0].finish_reason = "stop"
+            yield final
+
+        # Use side_effect so each call returns a fresh generator
+        mock_openai_client.chat.completions.create = AsyncMock(
+            side_effect=lambda *args, **kwargs: _make_mock_stream(*args, **kwargs)
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+
+        # Allow background tasks to drain
+        await asyncio.sleep(0.5)
+
+        get_settings.cache_clear()
+        os.environ.pop("DOCUMENT_STORAGE_PATH", None)
+
+
 @pytest.fixture
 async def project_with_parsed_docs(async_client_with_indexing) -> dict:
     """Create a project with parsed documents ready for indexing."""
