@@ -3,10 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.core.config import get_settings
+from app.repositories.chat import ChatRepository, SQLAlchemyChatRepository
 from app.repositories.document import DocumentRepository, SQLAlchemyDocumentRepository
 from app.repositories.indexing_job import IndexingJobRepository, SQLAlchemyIndexingJobRepository
 from app.repositories.project import ProjectRepository, SQLAlchemyProjectRepository
 from app.repositories.settings import SettingsRepository, SQLAlchemySettingsRepository
+from app.services.chat import ChatService
 from app.services.document import DocumentService
 from app.services.indexing import IndexingService
 from app.services.project import ProjectService
@@ -62,3 +64,15 @@ async def get_indexing_service(
     settings_repo: SettingsRepository = Depends(get_settings_repository),
 ) -> IndexingService:
     return IndexingService(job_repo, doc_repo, project_repo, settings_repo)
+
+
+async def get_chat_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> ChatRepository:
+    return SQLAlchemyChatRepository(session)
+
+
+async def get_chat_service(
+    repo: ChatRepository = Depends(get_chat_repository),
+) -> ChatService:
+    return ChatService(repo)

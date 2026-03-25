@@ -86,6 +86,17 @@ async def lifespan(app: FastAPI):
     app.state.embedding_service = embedding_service
     logger.info("Embedding service initialized")
 
+    # Initialize FlashRank reranker (singleton on app.state)
+    try:
+        from flashrank import Ranker
+
+        ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", max_length=512)
+        app.state.ranker = ranker
+        logger.info("FlashRank reranker initialized", model="ms-marco-MiniLM-L-12-v2")
+    except Exception as e:
+        app.state.ranker = None
+        logger.warning("FlashRank reranker not available, reranking disabled", error=str(e))
+
     # Recover orphaned indexing jobs (RUNNING -> FAILED on startup)
     try:
         from app.repositories.indexing_job import SQLAlchemyIndexingJobRepository
