@@ -4,9 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db_session
 from app.core.config import get_settings
 from app.repositories.document import DocumentRepository, SQLAlchemyDocumentRepository
+from app.repositories.indexing_job import IndexingJobRepository, SQLAlchemyIndexingJobRepository
 from app.repositories.project import ProjectRepository, SQLAlchemyProjectRepository
 from app.repositories.settings import SettingsRepository, SQLAlchemySettingsRepository
 from app.services.document import DocumentService
+from app.services.indexing import IndexingService
 from app.services.project import ProjectService
 from app.services.settings import SettingsService
 
@@ -45,3 +47,18 @@ async def get_settings_service(
     repo: SettingsRepository = Depends(get_settings_repository),
 ) -> SettingsService:
     return SettingsService(repo)
+
+
+async def get_indexing_job_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> IndexingJobRepository:
+    return SQLAlchemyIndexingJobRepository(session)
+
+
+async def get_indexing_service(
+    job_repo: IndexingJobRepository = Depends(get_indexing_job_repository),
+    doc_repo: DocumentRepository = Depends(get_document_repository),
+    project_repo: ProjectRepository = Depends(get_project_repository),
+    settings_repo: SettingsRepository = Depends(get_settings_repository),
+) -> IndexingService:
+    return IndexingService(job_repo, doc_repo, project_repo, settings_repo)

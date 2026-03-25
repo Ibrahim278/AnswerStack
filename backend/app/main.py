@@ -70,6 +70,35 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Failed to initialize provider at startup", error=str(e))
 
+    # Initialize ChromaDB vector repository
+    from app.repositories.vector import ChromaDBVectorRepository
+
+    chromadb_path = "data/chromadb"
+    Path(chromadb_path).mkdir(parents=True, exist_ok=True)
+    vector_repo = ChromaDBVectorRepository(path=chromadb_path)
+    app.state.vector_repo = vector_repo
+    logger.info("ChromaDB vector repository initialized", path=chromadb_path)
+
+    # Initialize embedding service (uses provider_service singleton)
+    from app.services.embedding import OpenAIEmbeddingService
+
+    embedding_service = OpenAIEmbeddingService(provider_service)
+    app.state.embedding_service = embedding_service
+    logger.info("Embedding service initialized")
+
+    # Recover orphaned indexing jobs (RUNNING -> FAILED on startup)
+    try:
+        from app.repositories.indexing_job import SQLAlchemyIndexingJobRepository
+
+        async with session_factory() as session:
+            job_repo = SQLAlchemyIndexingJobRepository(session)
+            orphaned_count = await job_repo.mark_orphaned_running_as_failed()
+            await session.commit()
+            if orphaned_count > 0:
+                logger.warning("Recovered orphaned indexing jobs", count=orphaned_count)
+    except Exception as e:
+        logger.warning("Failed to recover orphaned jobs at startup", error=str(e))
+
     logger.info("Application started", app_name=settings.app_name, database_url=settings.database_url)
 
     yield
