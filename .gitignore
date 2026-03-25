@@ -4,3 +4,30 @@ package.json
 *.log
 .mcp.json
 .playwright-mcp/
+
+# Database
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+!.env.example
+
+# Virtual environments
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
