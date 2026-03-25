@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Document processing
+    chunk_size: int = 4000
+    chunk_overlap: int = 800
+    max_upload_size_mb: int = 50
+    document_storage_path: str = "data/documents"
+
 
 @lru_cache
 def get_settings() -> Settings:
