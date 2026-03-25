@@ -229,6 +229,10 @@ async def async_client_with_indexing(
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
 
+        # Allow background tasks (indexing jobs, parsing) to drain before
+        # the engine fixture tears down and drops tables.
+        await asyncio.sleep(0.5)
+
         get_settings.cache_clear()
         os.environ.pop("DOCUMENT_STORAGE_PATH", None)
 
