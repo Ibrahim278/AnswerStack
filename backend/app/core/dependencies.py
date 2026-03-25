@@ -5,8 +5,10 @@ from app.api.deps import get_db_session
 from app.core.config import get_settings
 from app.repositories.document import DocumentRepository, SQLAlchemyDocumentRepository
 from app.repositories.project import ProjectRepository, SQLAlchemyProjectRepository
+from app.repositories.settings import SettingsRepository, SQLAlchemySettingsRepository
 from app.services.document import DocumentService
 from app.services.project import ProjectService
+from app.services.settings import SettingsService
 
 
 async def get_project_repository(
@@ -31,3 +33,15 @@ async def get_document_service(
     repo: DocumentRepository = Depends(get_document_repository),
 ) -> DocumentService:
     return DocumentService(repo, get_settings())
+
+
+async def get_settings_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> SettingsRepository:
+    return SQLAlchemySettingsRepository(session)
+
+
+async def get_settings_service(
+    repo: SettingsRepository = Depends(get_settings_repository),
+) -> SettingsService:
+    return SettingsService(repo)

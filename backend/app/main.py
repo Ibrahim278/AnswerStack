@@ -35,6 +35,41 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
 
     logger = structlog.get_logger()
+
+    # Initialize provider service (singleton on app.state)
+    from app.services.provider import ProviderService
+
+    provider_service = ProviderService()
+    app.state.provider_service = provider_service
+
+    # Attempt initial provider configuration from DB settings
+    try:
+        from app.repositories.settings import SQLAlchemySettingsRepository
+
+        async with session_factory() as session:
+            settings_repo = SQLAlchemySettingsRepository(session)
+            db_settings = await settings_repo.get()
+            await session.commit()
+
+            if db_settings.provider_url and db_settings.provider_url.strip():
+                provider_service.configure(
+                    base_url=db_settings.provider_url,
+                    api_key=db_settings.provider_api_key,
+                )
+                # Try to verify provider is reachable (non-blocking)
+                is_available = await provider_service.check_provider_available()
+                if is_available:
+                    logger.info("Provider configured and available", base_url=db_settings.provider_url)
+                else:
+                    logger.warning(
+                        "Provider configured but not reachable (degraded mode)",
+                        base_url=db_settings.provider_url,
+                    )
+            else:
+                logger.info("No provider configured, starting in degraded mode")
+    except Exception as e:
+        logger.warning("Failed to initialize provider at startup", error=str(e))
+
     logger.info("Application started", app_name=settings.app_name, database_url=settings.database_url)
 
     yield
