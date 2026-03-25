@@ -43,6 +43,14 @@ class Document(Base):
     )
     chunk_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    embedding_model_version: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    chunk_params_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

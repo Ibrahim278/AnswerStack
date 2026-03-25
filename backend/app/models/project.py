@@ -32,3 +32,12 @@ class Project(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    last_indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    index_status: Mapped[str] = mapped_column(
+        String(20),
+        default="not_indexed",
+        nullable=False,
+    )
