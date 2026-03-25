@@ -24,7 +24,7 @@ class ChatMessageResponse(BaseModel):
     session_id: UUID
     role: str
     content: str
-    sources_json: dict | None
+    sources_json: list | dict | None
     created_at: datetime
 
 

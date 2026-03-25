@@ -62,7 +62,9 @@ async def get_session_detail(
     chat_service: ChatService = Depends(get_chat_service),
 ) -> ChatSessionDetailResponse:
     """Get a chat session with its messages."""
-    session = await chat_service.get_session_with_messages(session_id)
+    session = await chat_service.get_session_with_messages(
+        session_id, project_id=project_id
+    )
     return ChatSessionDetailResponse.model_validate(session)
 
 
@@ -76,7 +78,9 @@ async def rename_session(
     chat_service: ChatService = Depends(get_chat_service),
 ) -> ChatSessionResponse:
     """Rename a chat session."""
-    session = await chat_service.rename_session(session_id, body.title)
+    session = await chat_service.rename_session(
+        session_id, body.title, project_id=project_id
+    )
     return ChatSessionResponse.model_validate(session)
 
 
@@ -87,7 +91,7 @@ async def clear_session(
     chat_service: ChatService = Depends(get_chat_service),
 ) -> Response:
     """Clear all messages from a chat session."""
-    await chat_service.clear_session(session_id)
+    await chat_service.clear_session(session_id, project_id=project_id)
     return Response(status_code=204)
 
 
@@ -98,7 +102,7 @@ async def delete_session(
     chat_service: ChatService = Depends(get_chat_service),
 ) -> Response:
     """Delete a chat session and all its messages."""
-    await chat_service.delete_session(session_id)
+    await chat_service.delete_session(session_id, project_id=project_id)
     return Response(status_code=204)
 
 
@@ -146,7 +150,9 @@ async def stream_chat(
 
                 # Create or resume session
                 if body.session_id:
-                    session = await chat_service.get_session(body.session_id)
+                    session = await chat_service.get_session(
+                        body.session_id, project_id=project_id
+                    )
                 else:
                     session = await chat_service.create_session(project_id)
 
@@ -331,7 +337,7 @@ async def stream_chat(
                 "data": json.dumps(
                     {
                         "code": "stream.error",
-                        "message": str(e),
+                        "message": "An error occurred while generating the response. Please try again.",
                     }
                 ),
             }

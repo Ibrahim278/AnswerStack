@@ -39,7 +39,7 @@ class ChatRepository(ABC):
         session_id: UUID,
         role: str,
         content: str,
-        sources_json: dict | None = None,
+        sources_json: list | dict | None = None,
     ) -> ChatMessage: ...
 
     @abstractmethod
@@ -115,7 +115,7 @@ class SQLAlchemyChatRepository(ChatRepository):
         session_id: UUID,
         role: str,
         content: str,
-        sources_json: dict | None = None,
+        sources_json: list | dict | None = None,
     ) -> ChatMessage:
         message = ChatMessage(
             session_id=session_id,
