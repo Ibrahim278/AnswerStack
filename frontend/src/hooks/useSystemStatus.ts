@@ -11,6 +11,9 @@ export function useSystemStatus(projectId?: string) {
   const queryResult = useQuery({
     queryKey: queryKeys.systemStatus(projectId),
     queryFn: () => statusApi.getStatus(projectId),
+    retry: 3,
+    retryDelay: 1000,
+    gcTime: 0, // Don't cache errors across refreshes
     refetchInterval: () => {
       if (typeof document !== 'undefined' && document.hidden) return false;
       // When indexing is active, poll more frequently
@@ -44,7 +47,7 @@ export function useSystemStatus(projectId?: string) {
     previousStatus.current = currentStatus;
   }, [queryResult.data]);
 
-  const showOverlay = consecutiveFailures.current >= 3;
+  const showOverlay = consecutiveFailures.current >= 5;
 
   return { ...queryResult, showOverlay };
 }
