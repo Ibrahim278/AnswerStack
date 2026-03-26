@@ -24,19 +24,24 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const isMobile = useMediaQuery('(max-width: 48em)');
 
-  // Project info for heading
+  // Project info for heading -- gate other queries on project success
   const { data: project, isError: projectError, isLoading: projectLoading } = useProject(projectId!);
+  const projectValid = !!project && !projectError;
 
-  // System status for banners (D-81, D-82, D-86)
-  const { data: status } = useSystemStatus(projectId);
+  // System status for banners (D-81, D-82, D-86) -- only fetch when project exists
+  const { data: status } = useSystemStatus(projectValid ? projectId : undefined);
   const systemStatus = status?.status;
 
-  // Session detail (D-47, D-73)
-  const { data: sessionDetail, isError: sessionError } = useSessionDetail(projectId!, sessionId);
+  // Session detail (D-47, D-73) -- only fetch when project exists
+  const { data: sessionDetail, isError: sessionError } = useSessionDetail(
+    projectValid ? projectId! : '', sessionId,
+  );
   const messages = sessionDetail?.messages ?? [];
 
-  // Suggested prompts (D-50, D-74)
-  const { data: suggestedPrompts, isLoading: suggestedPromptsLoading } = useSuggestedPrompts(projectId!);
+  // Suggested prompts (D-50, D-74) -- only fetch when project exists
+  const { data: suggestedPrompts, isLoading: suggestedPromptsLoading } = useSuggestedPrompts(
+    projectValid ? projectId! : '',
+  );
 
   // SSE streaming (D-69: URL sync on session creation)
   const handleSessionCreated = useCallback(
