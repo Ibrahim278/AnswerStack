@@ -51,6 +51,9 @@ export function InlineProjectName({ project }: InlineProjectNameProps) {
     if (e.key === 'Enter') {
       handleSave();
     } else if (e.key === 'Escape') {
+      // Stop propagation to prevent Escape from bubbling to global handlers
+      // (e.g. source panel close, or any parent keyboard listeners)
+      e.stopPropagation();
       setValue(project.name);
       setEditing(false);
     }

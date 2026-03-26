@@ -50,7 +50,7 @@ export function InlineSessionName({ projectId, sessionId, currentTitle, onDone }
       onChange={(e) => setValue(e.currentTarget.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') handleSave();
-        if (e.key === 'Escape') onDone();
+        if (e.key === 'Escape') { e.stopPropagation(); onDone(); }
       }}
       onBlur={handleSave}
       size="xs"
