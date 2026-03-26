@@ -1,0 +1,9 @@
+/* NProgress bar style override */
+#nprogress .bar {
+  background: var(--mantine-color-blue-6);
+  height: 2px;
+}
+
+#nprogress .peg {
+  box-shadow: 0 0 10px var(--mantine-color-blue-6), 0 0 5px var(--mantine-color-blue-6);
+}
