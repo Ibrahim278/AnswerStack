@@ -25,12 +25,16 @@ class PdfParser(DocumentParser):
         """
         try:
             doc = pymupdf.open(stream=content, filetype="pdf")
-            page_chunks = pymupdf4llm.to_markdown(doc, page_chunks=True)
-            texts = [chunk["text"] for chunk in page_chunks]
-            full_text = "\n\n".join(texts)
-            page_count = len(page_chunks)
-            doc.close()
+            try:
+                page_chunks = pymupdf4llm.to_markdown(doc, page_chunks=True)
+                texts = [chunk["text"] for chunk in page_chunks]
+                full_text = "\n\n".join(texts)
+                page_count = len(page_chunks)
+            finally:
+                doc.close()
             return ParseResult(text=full_text, page_count=page_count)
+        except ValueError:
+            raise
         except Exception as exc:
             raise ValueError(f"Failed to parse PDF '{filename}': {exc}") from exc
 

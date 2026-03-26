@@ -1,7 +1,8 @@
 from datetime import datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 
 class SettingsResponse(BaseModel):
@@ -22,6 +23,15 @@ class SettingsResponse(BaseModel):
     provider_capabilities: dict | None
     updated_at: datetime
 
+    @field_serializer("provider_api_key")
+    @classmethod
+    def mask_api_key(cls, v: str | None) -> str | None:
+        if not v:
+            return v
+        if len(v) <= 8:
+            return "***"
+        return f"{v[:3]}...{v[-4:]}"
+
 
 class SettingsUpdate(BaseModel):
     provider_url: str | None = Field(None, max_length=2048)
@@ -35,6 +45,18 @@ class SettingsUpdate(BaseModel):
     top_k: int | None = Field(None, ge=1, le=50)
     similarity_threshold: float | None = Field(None, ge=0.0, le=1.0)
     reranker_enabled: bool | None = None
+
+    @field_validator("provider_url")
+    @classmethod
+    def validate_provider_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("provider_url must use http:// or https:// scheme")
+        if not parsed.hostname:
+            raise ValueError("provider_url must have a valid hostname")
+        return v.rstrip("/")
 
     @model_validator(mode="after")
     def validate_chunk_overlap(self) -> "SettingsUpdate":

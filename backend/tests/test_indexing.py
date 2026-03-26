@@ -101,15 +101,30 @@ async def test_cancel_job(project_with_parsed_docs):
     data = project_with_parsed_docs
     client, project_id = data["client"], data["project_id"]
 
-    # Trigger build
-    resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
-    assert resp.status_code == 202
+    # Slow down the mock embedding service so the background task doesn't
+    # finish before the cancel request arrives (otherwise it's a race).
+    from unittest.mock import AsyncMock
 
-    # Cancel immediately
-    resp = await client.post(f"/api/v1/projects/{project_id}/indexing/cancel")
-    # Might be 200 (cancelled) or 404 (job already completed)
-    if resp.status_code == 200:
-        assert resp.json()["status"] == "cancelled"
+    original_embed = client._transport.app.state.embedding_service.embed_texts  # type: ignore[union-attr]
+
+    async def slow_embed(texts, model):
+        await asyncio.sleep(0.3)
+        return [[0.1] * 384 for _ in texts]
+
+    client._transport.app.state.embedding_service.embed_texts = AsyncMock(side_effect=slow_embed)  # type: ignore[union-attr]
+
+    try:
+        # Trigger build
+        resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+        assert resp.status_code == 202
+
+        # Cancel immediately
+        resp = await client.post(f"/api/v1/projects/{project_id}/indexing/cancel")
+        # Might be 200 (cancelled) or 404 (job already completed)
+        if resp.status_code == 200:
+            assert resp.json()["status"] == "cancelled"
+    finally:
+        client._transport.app.state.embedding_service.embed_texts = original_embed  # type: ignore[union-attr]
 
 
 async def test_cancel_no_running_job(project_with_parsed_docs):

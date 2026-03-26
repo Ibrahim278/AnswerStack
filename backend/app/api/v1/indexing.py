@@ -4,7 +4,9 @@ import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_db_session
 from app.core.dependencies import get_indexing_service, get_project_service
 from app.schemas.indexing import (
     IndexingJobResponse,
@@ -21,6 +23,7 @@ router = APIRouter(prefix="/projects/{project_id}/indexing", tags=["indexing"])
 async def trigger_build(
     project_id: UUID,
     request: Request,
+    db: AsyncSession = Depends(get_db_session),
     indexing_service: IndexingService = Depends(get_indexing_service),
     project_service: ProjectService = Depends(get_project_service),
 ) -> IndexingTriggerResponse:
@@ -31,6 +34,10 @@ async def trigger_build(
     """
     await project_service.get_project(project_id)
     job = await indexing_service.trigger_build(project_id)
+
+    # Commit before launching background task so the job row is visible
+    # to the background task's independent DB session.
+    await db.commit()
 
     asyncio.create_task(
         run_indexing_job(
@@ -73,6 +80,7 @@ async def cancel_job(
 async def retry_job(
     project_id: UUID,
     request: Request,
+    db: AsyncSession = Depends(get_db_session),
     indexing_service: IndexingService = Depends(get_indexing_service),
 ) -> IndexingTriggerResponse:
     """Retry the last failed or cancelled indexing job.
@@ -80,6 +88,10 @@ async def retry_job(
     Creates a new job and launches the background runner.
     """
     job = await indexing_service.retry_job(project_id)
+
+    # Commit before launching background task so the job row is visible
+    # to the background task's independent DB session.
+    await db.commit()
 
     asyncio.create_task(
         run_indexing_job(

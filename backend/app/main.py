@@ -13,6 +13,15 @@ from app.core.errors import AppError, app_error_handler, unhandled_error_handler
 from app.core.logging import configure_logging
 
 
+def _mask_db_url(url: str) -> str:
+    """Return a safe representation of a database URL, masking any password."""
+    import re
+
+    # Mask password in urls like scheme://user:password@host/db
+    masked = re.sub(r"(://[^:]+:)[^@]+(@)", r"\1***\2", url)
+    return masked
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -52,7 +61,7 @@ async def lifespan(app: FastAPI):
             await session.commit()
 
             if db_settings.provider_url and db_settings.provider_url.strip():
-                provider_service.configure(
+                await provider_service.configure(
                     base_url=db_settings.provider_url,
                     api_key=db_settings.provider_api_key,
                 )
@@ -97,24 +106,64 @@ async def lifespan(app: FastAPI):
         app.state.ranker = None
         logger.warning("FlashRank reranker not available, reranking disabled", error=str(e))
 
-    # Recover orphaned indexing jobs (RUNNING -> FAILED on startup)
+    # Recover orphaned indexing jobs and stuck documents on startup.
+    # RUNNING jobs -> FAILED (mark_orphaned_running_as_failed).
+    # PENDING jobs -> FAILED (they never actually started).
+    # INDEXING documents -> PARSED (so they are eligible for the next retry).
     try:
+        from datetime import datetime as _dt, timezone as _tz
+
+        from sqlalchemy import update as sa_upd
+
+        from app.models.document import Document as _Document, DocumentStatus as _DocStatus
+        from app.models.indexing_job import IndexingJob as _IndexingJob, IndexingJobStatus as _JobStatus
         from app.repositories.indexing_job import SQLAlchemyIndexingJobRepository
 
         async with session_factory() as session:
             job_repo = SQLAlchemyIndexingJobRepository(session)
+
+            # Mark RUNNING jobs as FAILED
             orphaned_count = await job_repo.mark_orphaned_running_as_failed()
+
+            # Mark PENDING jobs as FAILED (they never started)
+            pending_result = await session.execute(
+                sa_upd(_IndexingJob)
+                .where(_IndexingJob.status == _JobStatus.PENDING)
+                .values(
+                    status=_JobStatus.FAILED,
+                    error_detail={
+                        "stage": "startup_recovery",
+                        "message": "Job interrupted by server restart (was pending)",
+                    },
+                    completed_at=_dt.now(_tz.utc),
+                )
+            )
+            orphaned_count += pending_result.rowcount
+
+            # Reset documents stuck in INDEXING back to PARSED
+            reset_result = await session.execute(
+                sa_upd(_Document)
+                .where(_Document.status == _DocStatus.INDEXING)
+                .values(status=_DocStatus.PARSED)
+            )
+            stuck_docs = reset_result.rowcount
+
             await session.commit()
             if orphaned_count > 0:
                 logger.warning("Recovered orphaned indexing jobs", count=orphaned_count)
+            if stuck_docs > 0:
+                logger.warning(
+                    "Reset stuck INDEXING documents at startup", count=stuck_docs
+                )
     except Exception as e:
         logger.warning("Failed to recover orphaned jobs at startup", error=str(e))
 
-    logger.info("Application started", app_name=settings.app_name, database_url=settings.database_url)
+    logger.info("Application started", app_name=settings.app_name, database=_mask_db_url(settings.database_url))
 
     yield
 
     # Cleanup
+    await provider_service.close()
     await engine.dispose()
     logger.info("Application shutdown")
 

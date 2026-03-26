@@ -18,7 +18,9 @@ class ProviderService:
         self._models_cache_time: float = 0
         self._cache_ttl: float = 300.0
 
-    def configure(self, base_url: str, api_key: str) -> None:
+    async def configure(self, base_url: str, api_key: str) -> None:
+        if self._client is not None:
+            await self._client.close()
         base_url = base_url.rstrip("/")
         api_key = api_key or "not-needed"
         self._client = AsyncOpenAI(
@@ -31,6 +33,12 @@ class ProviderService:
         self._models_cache = None
         self._models_cache_time = 0
         logger.info("Provider configured", base_url=base_url)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client. Call during app shutdown."""
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
 
     @property
     def is_configured(self) -> bool:
@@ -50,11 +58,37 @@ class ProviderService:
             self._models_cache_time = time.monotonic()
             return (models, False)
         except openai.NotFoundError:
+            # Provider does not support model listing — treat as empty, not an error.
             logger.warning("Provider does not support model listing")
             return ([], False)
-        except Exception:
-            logger.warning("Failed to list models", exc_info=True)
-            return ([], False)
+        except openai.AuthenticationError as e:
+            logger.warning("Provider auth failed when listing models")
+            from app.core.errors import ProviderError
+            raise ProviderError(
+                "Authentication failed. Check your API key.",
+                retryable=False,
+            ) from e
+        except openai.APIConnectionError as e:
+            logger.warning("Provider connection failed when listing models")
+            from app.core.errors import ProviderError
+            raise ProviderError(
+                "Could not connect to provider. Check the URL.",
+                retryable=True,
+            ) from e
+        except openai.APITimeoutError as e:
+            logger.warning("Provider timed out when listing models")
+            from app.core.errors import ProviderError
+            raise ProviderError(
+                "Connection timed out. The provider may be slow or unreachable.",
+                retryable=True,
+            ) from e
+        except openai.APIStatusError as e:
+            logger.warning("Provider API error when listing models", status_code=e.status_code)
+            from app.core.errors import ProviderError
+            raise ProviderError(
+                f"Provider returned an error: {e.message}",
+                retryable=False,
+            ) from e
 
     async def test_connection(self, chat_model: str = "", embedding_model: str = "") -> dict[str, Any]:
         if not self.is_configured:

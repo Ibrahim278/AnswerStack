@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.settings import SETTINGS_ID, Settings as SettingsModel
 
 SETTINGS_DEFAULTS = {
-    "provider_url": "http://localhost:1234/v1",
+    "provider_url": "",
     "provider_api_key": "",
     "provider_model": "",
     "embedding_model": "",
@@ -44,8 +45,16 @@ class SQLAlchemySettingsRepository(SettingsRepository):
         if settings is None:
             settings = SettingsModel(id=SETTINGS_ID)
             self._session.add(settings)
-            await self._session.flush()
-            await self._session.refresh(settings)
+            try:
+                await self._session.flush()
+            except IntegrityError:
+                await self._session.rollback()
+                result = await self._session.execute(
+                    select(SettingsModel).where(SettingsModel.id == SETTINGS_ID)
+                )
+                settings = result.scalar_one_or_none()
+            else:
+                await self._session.refresh(settings)
         return settings
 
     async def update(self, **kwargs) -> SettingsModel:

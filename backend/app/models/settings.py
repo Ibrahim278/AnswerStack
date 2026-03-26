@@ -17,7 +17,7 @@ class Settings(Base):
         default=lambda: SETTINGS_ID,
     )
     provider_url: Mapped[str] = mapped_column(
-        String(2048), default="http://localhost:1234/v1", nullable=False
+        String(2048), default="", nullable=False
     )
     provider_api_key: Mapped[str] = mapped_column(
         String(512), default="", nullable=False

@@ -44,8 +44,8 @@ async def update_settings(
     # If provider config changed, reconfigure the provider client
     if "provider_url" in updates or "provider_api_key" in updates:
         provider_service = getattr(request.app.state, "provider_service", None)
-        if provider_service is not None:
-            provider_service.configure(
+        if provider_service is not None and settings.provider_url and settings.provider_url.strip():
+            await provider_service.configure(
                 base_url=settings.provider_url,
                 api_key=settings.provider_api_key,
             )
@@ -72,10 +72,10 @@ async def reset_settings(
     """Reset all settings to their default values."""
     settings = await service.reset_settings()
 
-    # Reconfigure provider with reset defaults
+    # Reconfigure provider with reset defaults (only if URL is set)
     provider_service = getattr(request.app.state, "provider_service", None)
-    if provider_service is not None:
-        provider_service.configure(
+    if provider_service is not None and settings.provider_url and settings.provider_url.strip():
+        await provider_service.configure(
             base_url=settings.provider_url,
             api_key=settings.provider_api_key,
         )

@@ -1,3 +1,4 @@
+import asyncio
 import traceback
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -92,10 +93,40 @@ class DocumentService:
                 )
                 continue
 
-            # Construct and validate storage path
+            # Validate sanitized filename doesn't attempt path traversal
+            # (full path validation happens after document_id is known)
             base_dir = Path(self._settings.document_storage_path)
-            storage_path = base_dir / str(project_id) / sanitized
+            probe_path = base_dir / str(project_id) / "probe" / sanitized
+            if not validate_storage_path(base_dir, probe_path):
+                rejected_files.append(
+                    RejectedFile(
+                        filename=original_filename,
+                        reason="Invalid file path detected.",
+                        error_code="document.path_traversal",
+                    )
+                )
+                continue
+
+            # Create document entity first to obtain the UUID
+            document = Document(
+                project_id=project_id,
+                filename=sanitized,
+                original_filename=original_filename,
+                file_type=ext[1:],  # Remove leading dot
+                file_size=len(content),
+                checksum=checksum,
+                status=DocumentStatus.UPLOADED,
+            )
+
+            # Save via repository (gives us document.id)
+            document = await self._repo.create(document)
+
+            # Construct storage path using document UUID to avoid same-name collisions
+            storage_path = base_dir / str(project_id) / str(document.id) / sanitized
+            # Final path validation with actual document ID
             if not validate_storage_path(base_dir, storage_path):
+                # Extremely unlikely, but clean up the DB record and reject
+                await self._repo.delete(document.id)
                 rejected_files.append(
                     RejectedFile(
                         filename=original_filename,
@@ -108,20 +139,6 @@ class DocumentService:
             # Write file to disk
             storage_path.parent.mkdir(parents=True, exist_ok=True)
             storage_path.write_bytes(content)
-
-            # Create document entity
-            document = Document(
-                project_id=project_id,
-                filename=sanitized,
-                original_filename=original_filename,
-                file_type=ext[1:],  # Remove leading dot
-                file_size=len(content),
-                checksum=checksum,
-                status=DocumentStatus.UPLOADED,
-            )
-
-            # Save via repository
-            document = await self._repo.create(document)
 
             # Schedule background parsing
             background_tasks.add_task(
@@ -180,19 +197,26 @@ class DocumentService:
         # Delete from DB (handles record + chunks)
         await self._repo.delete(document_id)
 
-        # Attempt to delete file from disk
-        file_path = (
+        # Attempt to delete file and its containing document-UUID directory from disk
+        doc_dir = (
             Path(self._settings.document_storage_path)
             / str(document.project_id)
-            / document.filename
+            / str(document_id)
         )
         try:
+            file_path = doc_dir / document.filename
             if file_path.exists():
                 file_path.unlink()
+            # Remove the now-empty document UUID directory
+            if doc_dir.exists():
+                try:
+                    doc_dir.rmdir()
+                except OSError:
+                    pass  # Not empty or already gone — leave it
         except OSError:
             logger.warning(
                 "Failed to delete document file from disk",
-                file_path=str(file_path),
+                doc_dir=str(doc_dir),
                 document_id=str(document_id),
             )
 
@@ -227,19 +251,20 @@ async def _parse_document_background(
             await repo.update_status(document_id, DocumentStatus.PARSING)
             await session.commit()
 
-            # Read file from disk
-            content = file_path.read_bytes()
+            # Read file from disk and parse off the event loop
+            loop = asyncio.get_running_loop()
+            content = await loop.run_in_executor(None, file_path.read_bytes)
 
-            # Get parser and parse
+            # Get parser and parse off the event loop (CPU-heavy)
             parser = get_parser_for_extension(file_path.suffix)
-            result = parser.parse(content, file_path.name)
+            result = await loop.run_in_executor(None, parser.parse, content, file_path.name)
 
-            # Split into chunks
+            # Split into chunks off the event loop
             splitter = RecursiveTextSplitter(
                 chunk_size=settings.chunk_size,
                 chunk_overlap=settings.chunk_overlap,
             )
-            chunks_text = splitter.split(result.text)
+            chunks_text = await loop.run_in_executor(None, splitter.split, result.text)
 
             # Create Chunk entities
             chunk_entities = []

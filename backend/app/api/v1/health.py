@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,13 +15,19 @@ async def liveness() -> LivenessResponse:
     return LivenessResponse()
 
 
-@router.get("/ready", response_model=ReadinessResponse)
+@router.get("/ready")
 async def readiness(
     session: AsyncSession = Depends(get_db_session),
-) -> ReadinessResponse:
+) -> JSONResponse:
     """Readiness probe -- checks database connectivity."""
     try:
         await session.execute(text("SELECT 1"))
-        return ReadinessResponse(status="ready", database="connected")
+        return JSONResponse(
+            status_code=200,
+            content=ReadinessResponse(status="ready", database="connected").model_dump(),
+        )
     except Exception:
-        return ReadinessResponse(status="degraded", database="unavailable")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "database": "disconnected"},
+        )

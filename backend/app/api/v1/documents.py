@@ -2,8 +2,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, UploadFile
 
+from app.core.config import get_settings
 from app.core.dependencies import get_document_service, get_project_service
-from app.schemas.document import DocumentResponse, DocumentUploadResult
+from app.schemas.document import DocumentResponse, DocumentUploadResult, RejectedFile
 from app.schemas.pagination import PaginatedResponse
 from app.services.document import DocumentService, FileData
 from app.services.project import ProjectService
@@ -28,13 +29,32 @@ async def upload_documents(
     # Verify project exists (raises NotFoundError if missing)
     await project_service.get_project(project_id)
 
-    # Read file data from UploadFile objects
-    file_data_list = []
+    # Read file data from UploadFile objects with streaming size check
+    settings = get_settings()
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    file_data_list: list[FileData] = []
+    early_rejected: list[RejectedFile] = []
     for file in files:
-        content = await file.read()
+        original_name = file.filename or "unnamed"
+        content = b""
+        too_large = False
+        while chunk := await file.read(8192):
+            content += chunk
+            if len(content) > max_bytes:
+                too_large = True
+                break
+        if too_large:
+            early_rejected.append(
+                RejectedFile(
+                    filename=original_name,
+                    reason=f"File exceeds {settings.max_upload_size_mb}MB limit.",
+                    error_code="document.too_large",
+                )
+            )
+            continue
         file_data_list.append(
             FileData(
-                filename=file.filename or "unnamed",
+                filename=original_name,
                 content=content,
                 content_type=file.content_type,
             )
@@ -46,6 +66,12 @@ async def upload_documents(
         background_tasks,
         request.app.state.session_factory,
     )
+    # Merge files rejected during streaming read with service-level rejections
+    if early_rejected:
+        result = DocumentUploadResult(
+            uploaded=result.uploaded,
+            rejected=early_rejected + result.rejected,
+        )
     return result
 
 

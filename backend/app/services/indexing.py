@@ -57,11 +57,11 @@ class IndexingService:
         if project is None:
             raise NotFoundError("project", str(project_id))
 
-        running = await self._job_repo.get_running_by_project(project_id)
-        if running is not None:
+        active = await self._job_repo.get_active_by_project(project_id)
+        if active is not None:
             raise ConflictError(
                 "indexing",
-                "An indexing job is already running for this project.",
+                "An indexing job is already active (pending or running) for this project.",
             )
 
         documents = await self._get_indexable_documents(project_id)
@@ -100,16 +100,17 @@ class IndexingService:
         }
 
     async def cancel_job(self, project_id: UUID) -> IndexingJob:
-        """Cancel the currently running job for a project.
+        """Cancel the currently active (PENDING or RUNNING) job for a project.
 
-        The background runner performs cooperative cancellation checks.
+        PENDING jobs are cancelled immediately. RUNNING jobs are marked
+        CANCELLED and the background runner performs cooperative cancellation.
         """
-        running = await self._job_repo.get_running_by_project(project_id)
-        if running is None:
+        active = await self._job_repo.get_active_by_project(project_id)
+        if active is None:
             raise NotFoundError("indexing_job", str(project_id))
 
         updated = await self._job_repo.update_status(
-            running.id, IndexingJobStatus.CANCELLED
+            active.id, IndexingJobStatus.CANCELLED
         )
 
         project = await self._project_repo.get_by_id(project_id)
@@ -160,7 +161,7 @@ class IndexingService:
         if project is None or project.last_indexed_at is None:
             return "not_indexed"
 
-        documents = await self._document_repo.list_by_project(project_id, None, 10000)
+        documents = await _get_all_project_documents(self._document_repo, project_id)
         stale_statuses = (
             DocumentStatus.PARSED,
             DocumentStatus.STALE,
@@ -181,8 +182,49 @@ class IndexingService:
 
     async def _get_indexable_documents(self, project_id: UUID) -> list:
         """Return documents eligible for indexing."""
-        all_docs = await self._document_repo.list_by_project(project_id, None, 10000)
-        return [d for d in all_docs if d.status in _INDEXABLE_STATUSES]
+        return await _get_all_project_documents(
+            self._document_repo, project_id, statuses=_INDEXABLE_STATUSES
+        )
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+
+async def _get_all_project_documents(
+    doc_repo: DocumentRepository,
+    project_id: UUID,
+    statuses: tuple | None = None,
+) -> list:
+    """Fetch all documents for a project using pagination, avoiding the
+    10,000-row hard limit in a single query.
+
+    If *statuses* is provided only documents whose status is in that
+    tuple are returned; otherwise all documents are returned.
+    """
+    all_docs: list = []
+    cursor: str | None = None
+    page_size = 500
+
+    while True:
+        # list_by_project internally fetches limit+1 rows to detect has_more.
+        # Pass page_size so the repo queries page_size+1 rows.
+        page = await doc_repo.list_by_project(project_id, cursor, page_size)
+        has_more = len(page) > page_size
+        items = page[:page_size] if has_more else page
+        if statuses is not None:
+            all_docs.extend(d for d in items if d.status in statuses)
+        else:
+            all_docs.extend(items)
+        if not has_more or not items:
+            break
+        # Derive next cursor from the last item in this page.
+        from app.schemas.pagination import encode_cursor
+
+        cursor = encode_cursor(items[-1].id)
+
+    return all_docs
 
 
 # ------------------------------------------------------------------
@@ -228,9 +270,19 @@ async def run_indexing_job(
             )
 
             # Gather indexable documents
-            all_docs = await doc_repo.list_by_project(project_id, None, 10000)
-            documents = [d for d in all_docs if d.status in _INDEXABLE_STATUSES]
+            documents = await _get_all_project_documents(
+                doc_repo, project_id, statuses=_INDEXABLE_STATUSES
+            )
             total_docs = len(documents)
+
+            # Check for cancellation BEFORE destroying the existing collection
+            refreshed_job = await job_repo.get_by_id(job_id)
+            if refreshed_job and refreshed_job.status == IndexingJobStatus.CANCELLED:
+                log.info(
+                    "Indexing job cancelled before collection rebuild",
+                    job_id=str(job_id),
+                )
+                return
 
             # Full rebuild: delete and re-create collection
             await asyncio.to_thread(vector_repo.delete_collection, project_id)
@@ -240,6 +292,9 @@ async def run_indexing_job(
                 # Cooperative cancellation check
                 refreshed_job = await job_repo.get_by_id(job_id)
                 if refreshed_job and refreshed_job.status == IndexingJobStatus.CANCELLED:
+                    # Reset any documents already marked INDEXING in this run
+                    await doc_repo.reset_indexing_documents(project_id)
+                    await session.commit()
                     log.info(
                         "Indexing job cancelled cooperatively",
                         job_id=str(job_id),
@@ -295,12 +350,24 @@ async def run_indexing_job(
                 await job_repo.update_progress(job_id, i + 1, total_docs, doc.id)
                 await session.commit()
 
+            # Re-check settings to detect if they changed during the run.
+            # If the hash differs, the freshly built index is already stale.
+            current_settings = await settings_repo.get()
+            final_hash = compute_chunk_params_hash(
+                current_settings.chunk_size,
+                current_settings.chunk_overlap,
+                current_settings.embedding_model,
+            )
+            final_index_status = (
+                "stale" if final_hash != current_chunk_params_hash else "indexed"
+            )
+
             # Mark job completed
             await job_repo.update_status(job_id, IndexingJobStatus.COMPLETED)
             await project_repo.update(
                 project_id,
                 last_indexed_at=datetime.now(timezone.utc),
-                index_status="indexed",
+                index_status=final_index_status,
             )
             await session.commit()
 
@@ -321,11 +388,13 @@ async def run_indexing_job(
         # Update job status to FAILED in a fresh session
         try:
             async with session_factory() as err_session:
+                from app.repositories.document import SQLAlchemyDocumentRepository as ErrDocRepo
                 from app.repositories.indexing_job import SQLAlchemyIndexingJobRepository as ErrJobRepo
                 from app.repositories.project import SQLAlchemyProjectRepository as ErrProjRepo
 
                 err_job_repo = ErrJobRepo(err_session)
                 err_proj_repo = ErrProjRepo(err_session)
+                err_doc_repo = ErrDocRepo(err_session)
 
                 await err_job_repo.update_status(
                     job_id,
@@ -336,6 +405,17 @@ async def run_indexing_job(
                         "traceback_summary": traceback.format_exc()[-500:],
                     },
                 )
+
+                # Reset any documents stuck in INDEXING so they are
+                # eligible for the next retry attempt.
+                reset_count = await err_doc_repo.reset_indexing_documents(project_id)
+                if reset_count > 0:
+                    log.info(
+                        "Reset stuck INDEXING documents after job failure",
+                        job_id=str(job_id),
+                        project_id=str(project_id),
+                        reset_count=reset_count,
+                    )
 
                 project = await err_proj_repo.get_by_id(project_id)
                 new_status = (

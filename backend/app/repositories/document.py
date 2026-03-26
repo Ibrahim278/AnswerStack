@@ -1,9 +1,10 @@
 from abc import abstractmethod
 from uuid import UUID
 
-from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy import delete as sa_delete, func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ValidationError
 from app.models.document import Chunk, Document, DocumentStatus
 from app.repositories.base import Repository
 from app.schemas.pagination import decode_cursor
@@ -28,6 +29,14 @@ class DocumentRepository(Repository[Document]):
         error_detail: dict | None = None,
         chunk_count: int | None = None,
     ) -> Document | None: ...
+
+    @abstractmethod
+    async def reset_indexing_documents(self, project_id: UUID) -> int:
+        """Reset documents stuck in INDEXING status back to PARSED.
+
+        Returns the number of affected documents.
+        """
+        ...
 
 
 class SQLAlchemyDocumentRepository(DocumentRepository):
@@ -67,15 +76,23 @@ class SQLAlchemyDocumentRepository(DocumentRepository):
 
         if cursor:
             cursor_id = decode_cursor(cursor)
-            cursor_row = await self.get_by_id(cursor_id)
-            if cursor_row:
-                query = query.where(
-                    (Document.created_at < cursor_row.created_at)
-                    | (
-                        (Document.created_at == cursor_row.created_at)
-                        & (Document.id < cursor_id)
-                    )
+            # Validate cursor belongs to this project to prevent cross-project leakage
+            cursor_row = await self._session.execute(
+                select(Document).where(
+                    Document.id == cursor_id,
+                    Document.project_id == project_id,
                 )
+            )
+            cursor_row = cursor_row.scalar_one_or_none()
+            if cursor_row is None:
+                raise ValidationError("cursor", "Invalid or expired pagination cursor.")
+            query = query.where(
+                (Document.created_at < cursor_row.created_at)
+                | (
+                    (Document.created_at == cursor_row.created_at)
+                    & (Document.id < cursor_id)
+                )
+            )
 
         query = query.limit(limit + 1)  # Fetch one extra for has_more detection
         result = await self._session.execute(query)
@@ -111,6 +128,22 @@ class SQLAlchemyDocumentRepository(DocumentRepository):
         await self._session.flush()
         await self._session.refresh(document)
         return document
+
+    async def reset_indexing_documents(self, project_id: UUID) -> int:
+        """Reset documents stuck in INDEXING status back to PARSED.
+
+        Called during job failure recovery so that a subsequent retry
+        can pick up these documents again.
+        """
+        result = await self._session.execute(
+            sa_update(Document)
+            .where(
+                Document.project_id == project_id,
+                Document.status == DocumentStatus.INDEXING,
+            )
+            .values(status=DocumentStatus.PARSED)
+        )
+        return result.rowcount
 
 
 class ChunkRepository:

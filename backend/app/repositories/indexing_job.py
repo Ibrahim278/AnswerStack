@@ -21,6 +21,11 @@ class IndexingJobRepository(Repository[IndexingJob]):
         ...
 
     @abstractmethod
+    async def get_active_by_project(self, project_id: UUID) -> IndexingJob | None:
+        """Return any active (PENDING or RUNNING) job for a project, if any."""
+        ...
+
+    @abstractmethod
     async def update_status(
         self,
         job_id: UUID,
@@ -87,6 +92,21 @@ class SQLAlchemyIndexingJobRepository(IndexingJobRepository):
                 IndexingJob.project_id == project_id,
                 IndexingJob.status == IndexingJobStatus.RUNNING,
             )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_active_by_project(self, project_id: UUID) -> IndexingJob | None:
+        """Return any PENDING or RUNNING job for a project, if any."""
+        result = await self._session.execute(
+            select(IndexingJob)
+            .where(
+                IndexingJob.project_id == project_id,
+                IndexingJob.status.in_(
+                    [IndexingJobStatus.PENDING, IndexingJobStatus.RUNNING]
+                ),
+            )
+            .order_by(IndexingJob.created_at.desc())
             .limit(1)
         )
         return result.scalar_one_or_none()

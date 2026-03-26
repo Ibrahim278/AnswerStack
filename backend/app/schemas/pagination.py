@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.core.errors import ValidationError
+
 T = TypeVar("T")
 
 
@@ -18,4 +20,7 @@ def encode_cursor(id: UUID) -> str:
 
 
 def decode_cursor(cursor: str) -> UUID:
-    return UUID(base64.urlsafe_b64decode(cursor.encode()).decode())
+    try:
+        return UUID(base64.urlsafe_b64decode(cursor.encode()).decode())
+    except Exception:
+        raise ValidationError("cursor", "Invalid pagination cursor")

@@ -19,7 +19,7 @@ async def test_get_settings_returns_defaults(async_client):
     assert data["top_k"] == 5
     assert data["similarity_threshold"] == 0.3
     assert data["reranker_enabled"] is True
-    assert data["provider_url"] == "http://localhost:1234/v1"
+    assert data["provider_url"] == ""
     assert data["provider_api_key"] == ""
     assert data["provider_model"] == ""
     assert data["embedding_model"] == ""
@@ -80,8 +80,48 @@ async def test_update_provider_settings(async_client):
     assert response.status_code == 200
     data = response.json()
     assert data["provider_url"] == "http://localhost:8080/v1"
-    assert data["provider_api_key"] == "sk-test"
+    # API key is masked in responses; "sk-test" (7 chars) becomes "***"
+    assert data["provider_api_key"] == "***"
     assert data["provider_model"] == "gpt-4"
+
+
+async def test_api_key_masking(async_client):
+    """provider_api_key is masked in GET/PUT responses to protect secrets."""
+    # Short key (<=8 chars) → "***"
+    r = await async_client.put("/api/v1/settings", json={"provider_api_key": "sk-short"})
+    assert r.status_code == 200
+    assert r.json()["provider_api_key"] == "***"
+
+    # Longer key (>8 chars) → "sk-...XXXX"
+    r = await async_client.put("/api/v1/settings", json={"provider_api_key": "sk-abcdef1234"})
+    assert r.status_code == 200
+    assert r.json()["provider_api_key"] == "sk-...1234"
+
+    # Empty key → remains empty
+    r = await async_client.put("/api/v1/settings", json={"provider_api_key": ""})
+    assert r.status_code == 200
+    assert r.json()["provider_api_key"] == ""
+
+
+async def test_provider_url_validation(async_client):
+    """provider_url must use http/https scheme and have a valid hostname."""
+    # Invalid scheme rejected
+    r = await async_client.put("/api/v1/settings", json={"provider_url": "ftp://example.com"})
+    assert r.status_code == 422
+
+    # No scheme rejected
+    r = await async_client.put("/api/v1/settings", json={"provider_url": "example.com/v1"})
+    assert r.status_code == 422
+
+    # Localhost is allowed (primary use-case)
+    r = await async_client.put("/api/v1/settings", json={"provider_url": "http://localhost:1234/v1"})
+    assert r.status_code == 200
+    assert r.json()["provider_url"] == "http://localhost:1234/v1"
+
+    # Trailing slash is stripped
+    r = await async_client.put("/api/v1/settings", json={"provider_url": "http://localhost:1234/v1/"})
+    assert r.status_code == 200
+    assert r.json()["provider_url"] == "http://localhost:1234/v1"
 
 
 # --- SET-03 / SET-05: Validation ---
