@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Textarea, ActionIcon, Group, Box, Text } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { IconSend, IconPlayerStop } from '@tabler/icons-react';
 
 interface ChatComposerProps {
@@ -12,6 +13,7 @@ interface ChatComposerProps {
 export function ChatComposer({ onSend, onStop, isStreaming, disabled = false }: ChatComposerProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isMobile = useMediaQuery('(max-width: 48em)');
 
   const canSend = value.trim().length > 0 && !isStreaming && !disabled;
 
@@ -47,7 +49,23 @@ export function ChatComposer({ onSend, onStop, isStreaming, disabled = false }: 
   }, [value]);
 
   return (
-    <Box className="chat-composer-shell">
+    <Box
+      className="chat-composer-shell"
+      style={{
+        position: 'sticky',
+        bottom: 0,
+        zIndex: 2,
+        boxShadow: '0 -14px 26px rgba(38, 55, 47, 0.08)',
+      }}
+    >
+      <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="xs">
+        <Text fw={700} size="sm">
+          Ask a grounded question
+        </Text>
+        <Text size="xs" c="dimmed">
+          {isStreaming ? 'Streaming response in progress' : 'Composer stays pinned while you read'}
+        </Text>
+      </Group>
       <Group gap="sm" align="flex-end" wrap="nowrap">
         <Textarea
           ref={textareaRef}
@@ -99,11 +117,13 @@ export function ChatComposer({ onSend, onStop, isStreaming, disabled = false }: 
       </Group>
       <Group justify="space-between" mt="xs" px={4} className="chat-composer-meta">
         <Text className="chat-composer-hint">
-          `Enter` sends, `Shift+Enter` adds a new line.
+          Enter sends. Shift+Enter adds a new line.
         </Text>
-        <Text className="chat-composer-hint">
-          Press `/` to focus the composer.
-        </Text>
+        {!isMobile && (
+          <Text className="chat-composer-hint">
+            Press / to focus the composer.
+          </Text>
+        )}
       </Group>
     </Box>
   );

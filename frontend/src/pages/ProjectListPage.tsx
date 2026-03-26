@@ -19,7 +19,7 @@ import type { ProjectResponse } from '../types';
 
 function ProjectListSkeleton() {
   return (
-    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+    <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }}>
       {Array.from({ length: 3 }, (_, i) => (
         <Skeleton key={i} height={200} radius="xl" />
       ))}
@@ -104,7 +104,7 @@ export default function ProjectListPage() {
         Tip: open a project to upload fresh material, rebuild its index, or continue a chat session.
       </Text>
 
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+      <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }}>
         {projects.map((project) => (
           <ProjectCard
             key={project.id}

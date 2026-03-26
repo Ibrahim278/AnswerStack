@@ -5,6 +5,9 @@ import {
   Stack,
   Button,
   rem,
+  ThemeIcon,
+  Badge,
+  Box,
 } from '@mantine/core';
 import { Dropzone, MIME_TYPES } from '@mantine/dropzone';
 import { useMediaQuery } from '@mantine/hooks';
@@ -139,7 +142,16 @@ export function DocumentDropzone({
 
   if (isMobile) {
     return (
-      <Stack gap="sm">
+      <Stack gap="sm" className="document-dropzone-panel surface-card" p="md">
+        <Stack gap={4}>
+          <Text className="page-intro__eyebrow" mb={0}>
+            Upload
+          </Text>
+          <Text fw={700}>Add source files</Text>
+          <Text size="sm" c="dimmed">
+            Bring in markdown, text, or PDF files and fold them into the workspace without leaving this page.
+          </Text>
+        </Stack>
         <Button
           variant="light"
           leftSection={<IconUpload size={16} />}
@@ -160,9 +172,9 @@ export function DocumentDropzone({
         >
           Tap to upload files
         </Button>
-        <Text size="xs" c="dimmed">
+        <Badge variant="light" color="gray" radius="xl" w="fit-content">
           Supported: .txt, .md, .pdf (max 50MB)
-        </Text>
+        </Badge>
         <UploadProgressList
           uploads={uploads}
           onReplace={handleReplace}
@@ -174,7 +186,7 @@ export function DocumentDropzone({
   }
 
   return (
-    <Stack gap="sm">
+    <Stack gap="sm" className="document-dropzone-panel">
       <Dropzone
         onDrop={handleDrop}
         onReject={(fileRejections) => {
@@ -189,42 +201,62 @@ export function DocumentDropzone({
         accept={ACCEPTED_TYPES}
         loading={uploadDocuments.isPending}
         p={hasDocuments ? 'sm' : 'xl'}
+        className="document-dropzone-shell"
       >
         <Group
-          justify="center"
+          justify="space-between"
           gap="xl"
-          mih={hasDocuments ? 60 : 120}
+          mih={hasDocuments ? 92 : 156}
+          align="center"
           style={{ pointerEvents: 'none' }}
         >
-          <Dropzone.Accept>
-            <IconUpload
-              style={{ width: rem(hasDocuments ? 32 : 52), height: rem(hasDocuments ? 32 : 52) }}
-              stroke={1.5}
-            />
-          </Dropzone.Accept>
-          <Dropzone.Reject>
-            <IconX
-              style={{ width: rem(hasDocuments ? 32 : 52), height: rem(hasDocuments ? 32 : 52) }}
-              stroke={1.5}
-              color="var(--mantine-color-red-6)"
-            />
-          </Dropzone.Reject>
-          <Dropzone.Idle>
-            <IconFileTypePdf
-              style={{ width: rem(hasDocuments ? 32 : 52), height: rem(hasDocuments ? 32 : 52) }}
-              stroke={1.5}
-              color="var(--mantine-color-dimmed)"
-            />
-          </Dropzone.Idle>
+          <Group gap="md" wrap="nowrap" align="center">
+            <ThemeIcon
+              size={hasDocuments ? 60 : 76}
+              radius={hasDocuments ? 22 : 28}
+              variant="light"
+              color="ocean"
+            >
+              <Dropzone.Accept>
+                <IconUpload
+                  style={{ width: rem(hasDocuments ? 28 : 38), height: rem(hasDocuments ? 28 : 38) }}
+                  stroke={1.6}
+                />
+              </Dropzone.Accept>
+              <Dropzone.Reject>
+                <IconX
+                  style={{ width: rem(hasDocuments ? 28 : 38), height: rem(hasDocuments ? 28 : 38) }}
+                  stroke={1.6}
+                  color="var(--mantine-color-red-6)"
+                />
+              </Dropzone.Reject>
+              <Dropzone.Idle>
+                <IconFileTypePdf
+                  style={{ width: rem(hasDocuments ? 28 : 38), height: rem(hasDocuments ? 28 : 38) }}
+                  stroke={1.6}
+                  color="var(--mantine-color-ocean-7)"
+                />
+              </Dropzone.Idle>
+            </ThemeIcon>
 
-          <div>
-            <Text size={hasDocuments ? 'sm' : 'lg'} inline>
-              Drop files here or click to upload
-            </Text>
-            <Text size="xs" c="dimmed" inline mt={7}>
-              Supported: .txt, .md, .pdf (max 50MB)
-            </Text>
-          </div>
+            <Box>
+              <Text className="page-intro__eyebrow" mb={6}>
+                {hasDocuments ? 'Add more files' : 'Start the workspace library'}
+              </Text>
+              <Text size={hasDocuments ? 'md' : 'lg'} fw={700}>
+                Drop files here or click to upload
+              </Text>
+              <Text size="sm" c="dimmed" mt={4}>
+                {hasDocuments
+                  ? 'Keep the workspace fresh with more source material whenever the project grows.'
+                  : 'Upload markdown, text, and PDF documents to build the first grounded knowledge base.'}
+              </Text>
+            </Box>
+          </Group>
+
+          <Badge variant="light" color="gray" radius="xl">
+            Supported: .txt, .md, .pdf (max 50MB)
+          </Badge>
         </Group>
       </Dropzone>
 

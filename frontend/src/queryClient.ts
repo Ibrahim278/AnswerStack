@@ -9,11 +9,27 @@ interface ApiErrorShape {
   request_id?: string;
 }
 
+function shouldSuppressDetailQueryToast(
+  apiError: ApiErrorShape,
+  queryKey: readonly unknown[],
+): boolean {
+  const rootKey = queryKey[0];
+  const isDetailLikeQuery =
+    rootKey === 'projects' || rootKey === 'sessions' || rootKey === 'system-status';
+
+  if (!isDetailLikeQuery) return false;
+
+  return apiError.error_code.startsWith('validation.') || apiError.error_code.endsWith('.not_found');
+}
+
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error: Error, query) => {
       const apiError = (error as unknown as Record<string, unknown>).apiError as ApiErrorShape | undefined;
       if (apiError) {
+        if (shouldSuppressDetailQueryToast(apiError, query.queryKey)) {
+          return;
+        }
         // Use query key as notification ID to deduplicate error toasts
         const notificationId = `query-error-${JSON.stringify(query.queryKey)}`;
         notifications.show({

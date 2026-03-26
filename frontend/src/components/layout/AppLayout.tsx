@@ -64,7 +64,7 @@ export function AppLayout() {
         header={{ height: 72 }}
         navbar={{
           width: sidebarCollapsed ? 60 : 280,
-          breakpoint: 'sm',
+          breakpoint: 'md',
           collapsed: { mobile: true },
         }}
       >

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import { Box, Text, Table } from '@mantine/core';
+import { Box, Text, Table, Group } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconInfoCircle } from '@tabler/icons-react';
 import Markdown from 'react-markdown';
@@ -20,13 +20,17 @@ interface AssistantMessageProps {
   message: ChatMessageResponse;
   isLastAssistant: boolean;
   onRetry?: () => void;
+  timestamp: {
+    label: string;
+    title: string;
+  };
 }
 
 /**
  * Left-aligned assistant message with full markdown rendering, citations,
  * source badge, and action bar (D-13, D-32, D-34, D-36, D-42, D-44, D-45, D-48, D-72).
  */
-function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantMessageProps) {
+function AssistantMessageInner({ message, isLastAssistant, onRetry, timestamp }: AssistantMessageProps) {
   const isMobile = useMediaQuery('(max-width: 48em)');
   const [hovered, setHovered] = useState(false);
   const sources: SSESourceItem[] = parseSources(message.sources_json);
@@ -51,19 +55,6 @@ function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantM
     // No images (D-40)
     img: ({ alt }: { alt?: string }) => <span>{alt ?? ''}</span>,
   }), [message.id]);
-
-  // Relative timestamp on hover (D-36)
-  const relativeTime = useMemo(() => {
-    const date = new Date(message.created_at);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return 'Just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    return `${Math.floor(diffHr / 24)}d ago`;
-  }, [message.created_at]);
 
   return (
     <Box
@@ -97,15 +88,18 @@ function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantM
         </Markdown>
       </Box>
 
-      {/* Source badge (D-07, D-18) */}
-      <SourceBadge messageId={message.id} sourceCount={sources.length} />
-
-      {/* Timestamp on hover (D-36) */}
-      {hovered && (
-        <Text size="xs" c="dimmed" mt={2}>
-          {relativeTime}
+      <Group className="chat-message-meta" justify="space-between" align="center" wrap="wrap" mt="xs">
+        <SourceBadge messageId={message.id} sourceCount={sources.length} />
+        <Text
+          size="xs"
+          c="dimmed"
+          className="chat-message-time"
+          title={timestamp.title}
+          aria-label={`Sent at ${timestamp.title}`}
+        >
+          {timestamp.label}
         </Text>
-      )}
+      </Group>
 
       {/* Action bar -- desktop: hover, mobile: always visible (D-48, D-98) */}
       {isMobile ? (

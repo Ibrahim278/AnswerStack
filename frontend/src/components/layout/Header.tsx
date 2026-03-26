@@ -38,7 +38,7 @@ export function Header({ onMobileMenuToggle, mobileMenuOpened }: HeaderProps) {
         <Burger
           opened={mobileMenuOpened}
           onClick={onMobileMenuToggle}
-          hiddenFrom="sm"
+          hiddenFrom="md"
           size="sm"
           aria-label="Toggle navigation"
         />
@@ -46,7 +46,7 @@ export function Header({ onMobileMenuToggle, mobileMenuOpened }: HeaderProps) {
         <Burger
           opened={false}
           onClick={toggleSidebar}
-          visibleFrom="sm"
+          visibleFrom="md"
           size="sm"
           aria-label="Toggle sidebar"
         />
@@ -74,7 +74,7 @@ export function Header({ onMobileMenuToggle, mobileMenuOpened }: HeaderProps) {
 
       {/* Center section - Breadcrumb (desktop only) */}
       {projectId && project && (
-        <Box visibleFrom="sm" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+        <Box visibleFrom="md" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
           <Breadcrumbs separator="·">
             <Anchor onClick={() => { void navigate('/projects'); }} style={{ cursor: 'pointer' }}>
               Projects

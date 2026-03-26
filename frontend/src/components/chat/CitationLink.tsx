@@ -15,28 +15,26 @@ export function CitationLink({ href, children, messageId, ...props }: CitationLi
   if (href?.startsWith('citation://')) {
     const sourceNumber = parseInt(href.replace('citation://', ''), 10);
     return (
-      <sup>
+      <sup className="citation-link-wrap">
         <a
           href="#"
           role="button"
-          aria-label={`View source ${sourceNumber}`}
+          className="citation-link"
+          aria-label={`Open source ${sourceNumber}`}
           onClick={(e) => {
             e.preventDefault();
             openSourcePanel(messageId);
-            // Dispatch custom event for scroll-to-card (SourcePanel will listen)
             window.dispatchEvent(
-              new CustomEvent('citation-click', { detail: { sourceNumber } }),
+              new CustomEvent('citation-click', {
+                detail: { messageId, sourceNumber },
+              }),
             );
           }}
-          style={{
-            color: 'var(--mantine-color-blue-6)',
-            textDecoration: 'none',
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
+          title={`Source ${sourceNumber}`}
+          data-source-number={sourceNumber}
           {...props}
         >
-          {children}
+          [{sourceNumber}]
         </a>
       </sup>
     );

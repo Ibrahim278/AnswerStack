@@ -17,13 +17,13 @@ export function BasicSettingsSection({ form }: BasicSettingsSectionProps) {
 
   return (
     <Paper withBorder radius="xl" p="lg" className="surface-card">
-      <Stack gap="md">
-        <div>
+      <Stack gap="lg">
+        <Stack gap={4}>
           <Text fw={700}>Provider Setup</Text>
           <Text size="sm" c="dimmed">
             Connect an OpenAI-compatible endpoint, choose chat and embedding models, and set the baseline response behavior.
           </Text>
-        </div>
+        </Stack>
 
         <TextInput
           label="Provider URL"

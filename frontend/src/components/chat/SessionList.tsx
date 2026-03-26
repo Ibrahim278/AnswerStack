@@ -18,7 +18,7 @@ export function SessionList({ projectId }: SessionListProps) {
 
   if (sidebarCollapsed) {
     return (
-      <Stack gap={0} className="sidebar-chat-list">
+      <Stack gap="xs" className="sidebar-chat-list">
         {sessions?.map((session) => (
           <Tooltip key={session.id} label={session.title} position="right" withArrow>
             <NavLink
@@ -36,7 +36,7 @@ export function SessionList({ projectId }: SessionListProps) {
   }
 
   return (
-    <Stack gap={0} className="sidebar-chat-list">
+    <Stack gap="xs" className="sidebar-chat-list">
       {isLoading && (
         <Stack gap="xs" px="xs">
           <Skeleton height={32} radius="sm" />

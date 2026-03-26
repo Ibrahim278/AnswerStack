@@ -1,9 +1,12 @@
-import { Paper, Group, Text, Button, Progress, Stack } from '@mantine/core';
+import { Paper, Group, Text, Button, Progress, Stack, ThemeIcon, Badge, Box } from '@mantine/core';
 import {
   IconBuildingBridge,
   IconRefresh,
   IconPlayerStop,
   IconRotateClockwise,
+  IconChecks,
+  IconAlertTriangle,
+  IconClockHour4,
 } from '@tabler/icons-react';
 import {
   useIndexingStatus,
@@ -49,7 +52,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
 
   if (isLoading || !status) {
     return (
-      <Paper withBorder p="lg" radius="xl" className="surface-card">
+      <Paper withBorder p="lg" radius="xl" className="surface-card index-status-card">
         <Text size="sm" c="dimmed">Loading index status...</Text>
       </Paper>
     );
@@ -63,17 +66,25 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   if (job && (job.status === 'running' || job.status === 'pending')) {
     const percentage = Math.round(job.percentage);
     return (
-      <Paper withBorder p="lg" radius="xl" className="surface-card">
-        <Stack gap="sm">
-          <Group justify="space-between" align="center">
-            <div>
-              <Text size="sm" fw={700}>
-                Indexing in progress
-              </Text>
-              <Text size="xs" c="dimmed">
-                {job.documents_processed}/{job.documents_total} documents ({percentage}%)
-              </Text>
-            </div>
+      <Paper withBorder p="lg" radius="xl" className="surface-card index-status-card">
+        <Stack gap="md">
+          <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+            <Group gap="sm" wrap="nowrap" align="flex-start">
+              <ThemeIcon size="xl" radius="xl" variant="light" color="blue">
+                <IconClockHour4 size={18} />
+              </ThemeIcon>
+              <Stack gap={2}>
+                <Text className="page-intro__eyebrow" mb={0}>
+                  Index Build
+                </Text>
+                <Text size="sm" fw={700}>
+                  Indexing in progress
+                </Text>
+                <Text size="sm" c="dimmed">
+                  {job.documents_processed}/{job.documents_total} documents processed ({percentage}%)
+                </Text>
+              </Stack>
+            </Group>
             <Button
               variant="light"
               color="gray"
@@ -85,7 +96,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
               Cancel
             </Button>
           </Group>
-          <Progress value={percentage} size="md" animated />
+          <Progress value={percentage} size="lg" radius="xl" animated />
         </Stack>
       </Paper>
     );
@@ -94,7 +105,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   // Failed state
   if (indexStatus === 'failed' || (job && job.status === 'failed')) {
     return (
-      <Paper withBorder p="lg" radius="xl" className="surface-card">
+      <Paper withBorder p="lg" radius="xl" className="surface-card index-status-card">
         <Stack gap="sm">
           <ErrorBanner
             title="Indexing failed"
@@ -115,11 +126,19 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   // Cancelled state
   if (job && job.status === 'cancelled') {
     return (
-      <Paper withBorder p="lg" radius="xl" className="surface-card">
-        <Group justify="space-between" align="center">
-          <Text size="sm" c="dimmed">
-            Indexing was cancelled
-          </Text>
+      <Paper withBorder p="lg" radius="xl" className="surface-card index-status-card">
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+          <Stack gap={2}>
+            <Text className="page-intro__eyebrow" mb={0}>
+              Index Build
+            </Text>
+            <Text size="sm" fw={700}>
+              Indexing was cancelled
+            </Text>
+            <Text size="sm" c="dimmed">
+              Restart the build when you are ready to refresh the workspace.
+            </Text>
+          </Stack>
           <Button
             variant="light"
             size="xs"
@@ -137,69 +156,110 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   // Stale state
   if (indexStatus === 'stale') {
     return (
-      <Paper withBorder p="lg" radius="xl" className="surface-card">
-        <Group justify="space-between" align="center">
-          <div>
-            <Text size="sm" fw={700} c="orange.8">
-              Index is out of date
-            </Text>
-            {lastIndexed && (
-              <Text size="xs" c="dimmed">
-                Last indexed {formatRelativeTime(lastIndexed)}
+      <Paper withBorder p="lg" radius="xl" className="surface-card index-status-card index-status-card--warning">
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+          <Group gap="sm" wrap="nowrap" align="flex-start">
+            <ThemeIcon size="xl" radius="xl" variant="light" color="orange">
+              <IconAlertTriangle size={18} />
+            </ThemeIcon>
+            <Stack gap={2}>
+              <Text className="page-intro__eyebrow" mb={0}>
+                Index Health
               </Text>
+              <Text size="sm" fw={700} c="orange.8">
+                Index is out of date
+              </Text>
+              <Text size="sm" c="dimmed">
+                At least one document changed after the most recent build.
+              </Text>
+            </Stack>
+          </Group>
+          <Box>
+            {lastIndexed && (
+              <Badge variant="light" color="orange" radius="xl" mb="xs">
+                Last indexed {formatRelativeTime(lastIndexed)}
+              </Badge>
             )}
-          </div>
-          <Button
-            variant="light"
-            color="orange"
-            size="xs"
-            leftSection={<IconRotateClockwise size={14} />}
-            onClick={() => buildIndex.mutate(projectId)}
-            loading={buildIndex.isPending}
-          >
-            Rebuild Index
-          </Button>
+            <div>
+              <Button
+                variant="light"
+                color="orange"
+                size="xs"
+                leftSection={<IconRotateClockwise size={14} />}
+                onClick={() => buildIndex.mutate(projectId)}
+                loading={buildIndex.isPending}
+              >
+                Rebuild Index
+              </Button>
+            </div>
+          </Box>
         </Group>
       </Paper>
     );
   }
 
-  // Indexed (up to date) state
   if (indexStatus === 'indexed') {
     return (
-      <Paper withBorder p="lg" radius="xl" className="surface-card">
-        <Group justify="space-between" align="center">
-          <div>
-            <Text size="sm" fw={700} c="ocean.8">
-              Index up to date
-            </Text>
-            {lastIndexed && (
-              <Text size="xs" c="dimmed">
-                Last indexed {formatRelativeTime(lastIndexed)}
+      <Paper withBorder p="lg" radius="xl" className="surface-card index-status-card index-status-card--ready">
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+          <Group gap="sm" wrap="nowrap" align="flex-start">
+            <ThemeIcon size="xl" radius="xl" variant="light" color="ocean">
+              <IconChecks size={18} />
+            </ThemeIcon>
+            <Stack gap={2}>
+              <Text className="page-intro__eyebrow" mb={0}>
+                Index Health
               </Text>
+              <Text size="sm" fw={700} c="ocean.8">
+                Index up to date
+              </Text>
+              <Text size="sm" c="dimmed">
+                The workspace is ready for grounded answers against the current document set.
+              </Text>
+            </Stack>
+          </Group>
+          <Box>
+            {lastIndexed && (
+              <Badge variant="light" color="green" radius="xl" mb="xs">
+                Last indexed {formatRelativeTime(lastIndexed)}
+              </Badge>
             )}
-          </div>
-          <Button
-            variant="light"
-            size="xs"
-            leftSection={<IconRefresh size={14} />}
-            onClick={() => buildIndex.mutate(projectId)}
-            loading={buildIndex.isPending}
-          >
-            Rebuild Index
-          </Button>
+            <div>
+              <Button
+                variant="light"
+                size="xs"
+                leftSection={<IconRefresh size={14} />}
+                onClick={() => buildIndex.mutate(projectId)}
+                loading={buildIndex.isPending}
+              >
+                Rebuild Index
+              </Button>
+            </div>
+          </Box>
         </Group>
       </Paper>
     );
   }
 
-  // Not indexed (default) state
   return (
-    <Paper withBorder p="lg" radius="xl" className="surface-card">
-      <Group justify="space-between" align="center">
-        <Text size="sm" c="dimmed">
-          No index built
-        </Text>
+    <Paper withBorder p="lg" radius="xl" className="surface-card index-status-card">
+      <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+        <Group gap="sm" wrap="nowrap" align="flex-start">
+          <ThemeIcon size="xl" radius="xl" variant="light" color="sand">
+            <IconBuildingBridge size={18} />
+          </ThemeIcon>
+          <Stack gap={2}>
+            <Text className="page-intro__eyebrow" mb={0}>
+              Index Health
+            </Text>
+            <Text size="sm" fw={700}>
+              No index built yet
+            </Text>
+            <Text size="sm" c="dimmed">
+              Build the first index once your source files are in place.
+            </Text>
+          </Stack>
+        </Group>
         <Button
           size="xs"
           leftSection={<IconBuildingBridge size={14} />}

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { statusApi } from '../api/status';
 import { queryKeys } from '../api/queryKeys';
+import { isValidUuid } from '../utils/isValidUuid';
 
 interface UseSystemStatusOptions {
   notifyTransitions?: boolean;
@@ -12,10 +13,16 @@ export function useSystemStatus(projectId?: string, options?: UseSystemStatusOpt
   const previousStatus = useRef<string | null>(null);
   const consecutiveFailures = useRef<number>(0);
   const notifyTransitions = options?.notifyTransitions ?? false;
+  const hasProjectContext = projectId !== undefined;
+  const normalizedProjectId = projectId?.trim() || undefined;
+  const shouldFetch = normalizedProjectId
+    ? isValidUuid(normalizedProjectId)
+    : !hasProjectContext;
 
   const queryResult = useQuery({
-    queryKey: queryKeys.systemStatus(projectId),
-    queryFn: () => statusApi.getStatus(projectId),
+    queryKey: queryKeys.systemStatus(normalizedProjectId),
+    queryFn: () => statusApi.getStatus(normalizedProjectId),
+    enabled: shouldFetch,
     retry: 3,
     retryDelay: 1000,
     gcTime: 0, // Don't cache errors across refreshes

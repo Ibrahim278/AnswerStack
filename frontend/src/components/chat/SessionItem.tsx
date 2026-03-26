@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink } from '@mantine/core';
+import { Box, NavLink, Text } from '@mantine/core';
 import { IconMessage } from '@tabler/icons-react';
 import { useNavigate } from 'react-router';
 import type { ChatSessionResponse } from '../../types';
@@ -32,18 +32,40 @@ export function SessionItem({ session, projectId, isActive }: SessionItemProps) 
     <NavLink
       active={isActive}
       onClick={() => { void navigate(`/projects/${projectId}/chat/${session.id}`); }}
-      label={session.title}
+      label={(
+        <Text fw={isActive ? 700 : 500} lineClamp={1}>
+          {session.title}
+        </Text>
+      )}
       leftSection={<IconMessage size={18} />}
-      rightSection={
-        <SessionMenu
-          projectId={projectId}
-          sessionId={session.id}
-          opened={menuOpened}
-          onOpenChange={setMenuOpened}
-          onRename={() => setIsRenaming(true)}
-        />
-      }
+      rightSection={(
+        <Box
+          px={4}
+          py={2}
+          style={{
+            borderRadius: '999px',
+            background: menuOpened || isActive ? 'rgba(32, 169, 152, 0.12)' : 'transparent',
+          }}
+        >
+          <SessionMenu
+            projectId={projectId}
+            sessionId={session.id}
+            opened={menuOpened}
+            onOpenChange={setMenuOpened}
+            onRename={() => setIsRenaming(true)}
+          />
+        </Box>
+      )}
       px="xs"
+      styles={{
+        root: {
+          borderRadius: '18px',
+          minHeight: '44px',
+        },
+        label: {
+          minWidth: 0,
+        },
+      }}
     />
   );
 }

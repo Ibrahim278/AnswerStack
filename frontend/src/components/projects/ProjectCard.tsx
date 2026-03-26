@@ -27,47 +27,46 @@ function formatRelativeTime(dateString: string | null): string {
   return date.toLocaleDateString();
 }
 
-function getStatusColor(status: string): string {
+function getStatusBadgeConfig(status: string): { color: string; label: string; bg: string; text: string; border: string } {
   switch (status) {
     case 'indexed':
-      return 'green';
+      return { color: 'green', label: 'Indexed', bg: 'rgba(18, 128, 109, 0.14)', text: '#0f5147', border: 'rgba(18, 128, 109, 0.22)' };
     case 'not_indexed':
-      return 'gray';
+      return { color: 'gray', label: 'Not indexed', bg: 'rgba(73, 91, 82, 0.12)', text: '#33463e', border: 'rgba(73, 91, 82, 0.16)' };
     case 'stale':
-      return 'orange';
+      return { color: 'orange', label: 'Stale', bg: 'rgba(183, 111, 21, 0.14)', text: '#7f4b08', border: 'rgba(183, 111, 21, 0.2)' };
     case 'indexing':
-      return 'blue';
+      return { color: 'blue', label: 'Indexing', bg: 'rgba(20, 92, 176, 0.12)', text: '#124a87', border: 'rgba(20, 92, 176, 0.18)' };
     default:
-      return 'gray';
-  }
-}
-
-function getStatusLabel(status: string): string {
-  switch (status) {
-    case 'indexed':
-      return 'Indexed';
-    case 'not_indexed':
-      return 'Not indexed';
-    case 'stale':
-      return 'Stale';
-    case 'indexing':
-      return 'Indexing';
-    default:
-      return status;
+      return { color: 'gray', label: status, bg: 'rgba(73, 91, 82, 0.12)', text: '#33463e', border: 'rgba(73, 91, 82, 0.16)' };
   }
 }
 
 export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
   const navigate = useNavigate();
+  const statusBadge = getStatusBadgeConfig(project.index_status);
+  const handleOpen = () => {
+    void navigate(`/projects/${project.id}`);
+  };
 
   return (
     <Card
       className="project-card surface-card"
+      data-active={project.is_active ? 'true' : undefined}
       padding="lg"
       radius="xl"
       withBorder
       style={{ position: 'relative' }}
-      onClick={() => void navigate(`/projects/${project.id}`)}
+      role="link"
+      tabIndex={0}
+      aria-label={`Open project ${project.name}`}
+      onClick={handleOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleOpen();
+        }
+      }}
     >
       <Box style={{ position: 'absolute', top: 12, right: 12 }}>
         <ProjectCardMenu
@@ -107,11 +106,40 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
           {project.description || 'Organize documents, build an index, and ask evidence-backed questions from one workspace.'}
         </Text>
 
-        <Group justify="space-between" mt="auto">
-          <Badge variant="light" color={getStatusColor(project.index_status)} size="lg">
-            {getStatusLabel(project.index_status)}
-          </Badge>
-          <Text size="xs" c="dimmed">
+        <Group justify="space-between" mt="auto" align="center">
+          <Group gap="xs">
+            <Badge
+              variant="light"
+              color={statusBadge.color}
+              size="lg"
+              styles={{
+                root: {
+                  background: statusBadge.bg,
+                  color: statusBadge.text,
+                  border: `1px solid ${statusBadge.border}`,
+                },
+              }}
+            >
+              {statusBadge.label}
+            </Badge>
+            {project.is_active && (
+              <Badge
+                variant="light"
+                color="ocean"
+                size="md"
+                styles={{
+                  root: {
+                    background: 'rgba(18, 128, 109, 0.14)',
+                    color: '#0f5147',
+                    border: '1px solid rgba(18, 128, 109, 0.22)',
+                  },
+                }}
+              >
+                Active now
+              </Badge>
+            )}
+          </Group>
+          <Text size="xs" className="project-card__cta">
             Open workspace
           </Text>
         </Group>

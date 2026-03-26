@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react';
-import { Stack, Group, Button, Skeleton, Paper, Text } from '@mantine/core';
+import { Stack, Group, Button, Skeleton, Paper, Text, Box } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconDeviceFloppy, IconRestore, IconShieldCheck, IconAdjustments } from '@tabler/icons-react';
 import { useSettings, useUpdateSettings, useResetSettings } from '../hooks/useSettings';
@@ -57,6 +57,9 @@ export default function SettingsPage() {
   const updateSettings = useUpdateSettings();
   const resetSettings = useResetSettings();
   const [resetOpened, resetHandlers] = useDisclosure(false);
+  const isNarrow = useMediaQuery('(max-width: 48em)');
+  const saveButtonStyles = formLikeButtonStyles(false);
+  const disabledSaveButtonStyles = formLikeButtonStyles(true);
 
   const form = useForm<SettingsFormValues>({
     initialValues: initialFormValues,
@@ -187,7 +190,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <Stack gap="lg">
+    <Stack gap={isNarrow ? 'md' : 'lg'}>
       <PageIntro
         eyebrow="Configuration"
         title="Settings"
@@ -206,38 +209,95 @@ export default function SettingsPage() {
         )}
       />
 
-      <BasicSettingsSection form={form} />
+      <Stack gap={isNarrow ? 'md' : 'lg'} pb={isNarrow ? '6.5rem' : 0}>
+        <BasicSettingsSection form={form} />
 
-      <AdvancedSettingsSection form={form} />
+        <AdvancedSettingsSection form={form} />
+      </Stack>
 
-      <Paper className="surface-card settings-actions" withBorder radius="xl">
-        <Group justify="space-between" align="center">
-          <div>
-            <Text fw={600}>Review before saving</Text>
-            <Text size="sm" c="dimmed">
-              Unsaved changes stay local until you commit them.
-            </Text>
-          </div>
-          <Group>
-            <Button
-              variant="subtle"
-              color="red"
-              leftSection={<IconRestore size={16} />}
-              onClick={resetHandlers.open}
-            >
-              Reset to Defaults
-            </Button>
-            <Button
-              leftSection={<IconDeviceFloppy size={16} />}
-              loading={updateSettings.isPending}
-              disabled={!form.isDirty()}
-              onClick={handleSave}
-            >
-              Save Settings
-            </Button>
-          </Group>
-        </Group>
-      </Paper>
+      <Box
+        style={{
+          position: isNarrow ? 'sticky' : 'static',
+          bottom: isNarrow ? 12 : undefined,
+          zIndex: isNarrow ? 3 : undefined,
+          marginTop: isNarrow ? '-0.25rem' : 0,
+        }}
+      >
+        <Paper
+          className="surface-card"
+          withBorder
+          radius="xl"
+          p={isNarrow ? 'md' : 'lg'}
+          shadow={isNarrow ? 'md' : undefined}
+        >
+          <Stack gap={isNarrow ? 'sm' : 'sm'}>
+            <Group justify="space-between" align="flex-start" wrap="nowrap">
+              <Stack gap={4} style={{ flex: 1 }}>
+                <Text fw={600}>Review before saving</Text>
+                <Text size="sm" c="dimmed">
+                  {form.isDirty()
+                    ? 'You have unsaved changes. Save them to update provider and retrieval behavior.'
+                    : 'Everything is up to date. Changes stay local until you save them.'}
+                </Text>
+              </Stack>
+              {!isNarrow && (
+                <Text size="xs" c={form.isDirty() ? 'ocean.8' : 'dark.3'} fw={600}>
+                  {form.isDirty() ? 'Unsaved changes' : 'No pending changes'}
+                </Text>
+              )}
+            </Group>
+
+            {isNarrow ? (
+              <Stack gap="xs">
+                <Button
+                  leftSection={<IconDeviceFloppy size={16} />}
+                  loading={updateSettings.isPending}
+                  disabled={!form.isDirty()}
+                  onClick={handleSave}
+                  fullWidth
+                  styles={!form.isDirty() ? disabledSaveButtonStyles : saveButtonStyles}
+                >
+                  Save Settings
+                </Button>
+                <Button
+                  variant="subtle"
+                  color="red"
+                  leftSection={<IconRestore size={16} />}
+                  onClick={resetHandlers.open}
+                  fullWidth
+                >
+                  Reset to Defaults
+                </Button>
+              </Stack>
+            ) : (
+              <Group justify="space-between" align="center">
+                <Text size="xs" c="dimmed">
+                  Save after reviewing connection details and retrieval controls together.
+                </Text>
+                <Group>
+                  <Button
+                    variant="subtle"
+                    color="red"
+                    leftSection={<IconRestore size={16} />}
+                    onClick={resetHandlers.open}
+                  >
+                    Reset to Defaults
+                  </Button>
+                  <Button
+                    leftSection={<IconDeviceFloppy size={16} />}
+                    loading={updateSettings.isPending}
+                    disabled={!form.isDirty()}
+                    onClick={handleSave}
+                    styles={!form.isDirty() ? disabledSaveButtonStyles : saveButtonStyles}
+                  >
+                    Save Settings
+                  </Button>
+                </Group>
+              </Group>
+            )}
+          </Stack>
+        </Paper>
+      </Box>
 
       <ConfirmModal
         opened={resetOpened}
@@ -251,4 +311,28 @@ export default function SettingsPage() {
       />
     </Stack>
   );
+}
+
+function formLikeButtonStyles(disabled: boolean) {
+  if (!disabled) {
+    return {
+      root: {
+        backgroundColor: '#12806d',
+      },
+    };
+  }
+
+  return {
+    root: {
+      backgroundColor: 'rgba(56, 73, 64, 0.12)',
+      border: '1px solid rgba(56, 73, 64, 0.18)',
+      opacity: 1,
+    },
+    label: {
+      color: '#4a5b53',
+    },
+    section: {
+      color: '#4a5b53',
+    },
+  };
 }

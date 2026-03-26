@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Group, Text, CloseButton } from '@mantine/core';
 import { useChatStore } from '../../stores/chatStore';
 import type { SSESourceItem, ChatMessageResponse } from '../../types';
@@ -21,6 +21,8 @@ export function SourcePanel({ messages }: SourcePanelProps) {
   const [highlightedSource, setHighlightedSource] = useState<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const pendingCitationRef = useRef<{ messageId: string; sourceNumber: number } | null>(null);
+  const clearHighlightTimeoutRef = useRef<number | null>(null);
 
   // Find sources for active message
   const activeMessage = messages.find((m) => m.id === activeSourceMsgId);
@@ -32,25 +34,57 @@ export function SourcePanel({ messages }: SourcePanelProps) {
   const streamingSources = streamingMsgId === activeSourceMsgId ? currentSources : EMPTY_SOURCES;
   const displaySources = sources.length > 0 ? sources : streamingSources;
 
+  const scrollToSource = useCallback((sourceNumber: number) => {
+    if (clearHighlightTimeoutRef.current) {
+      window.clearTimeout(clearHighlightTimeoutRef.current);
+    }
+
+    setHighlightedSource(sourceNumber);
+
+    requestAnimationFrame(() => {
+      const card = scrollContainerRef.current?.querySelector<HTMLElement>(
+        `[data-source-index="${sourceNumber}"]`,
+      );
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      card.focus({ preventScroll: true });
+    });
+
+    clearHighlightTimeoutRef.current = window.setTimeout(() => {
+      setHighlightedSource(null);
+      clearHighlightTimeoutRef.current = null;
+    }, 3000);
+  }, []);
+
   // D-21: Listen for citation-click events to scroll to card
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       const sourceNumber = detail?.sourceNumber;
-      if (typeof sourceNumber === 'number') {
-        setHighlightedSource(sourceNumber);
-        setTimeout(() => {
-          const card = scrollContainerRef.current?.querySelector(
-            `[data-source-index="${sourceNumber}"]`,
-          );
-          card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          setTimeout(() => setHighlightedSource(null), 3000);
-        }, 220);
+      const messageId = detail?.messageId;
+
+      if (typeof sourceNumber === 'number' && typeof messageId === 'string') {
+        pendingCitationRef.current = { messageId, sourceNumber };
+
+        if (sourcePanelOpen && activeSourceMsgId === messageId) {
+          scrollToSource(sourceNumber);
+          pendingCitationRef.current = null;
+        }
       }
     };
     window.addEventListener('citation-click', handler);
     return () => window.removeEventListener('citation-click', handler);
-  }, []);
+  }, [activeSourceMsgId, scrollToSource, sourcePanelOpen]);
+
+  useEffect(() => {
+    const pendingCitation = pendingCitationRef.current;
+    if (!pendingCitation || !sourcePanelOpen) return;
+    if (activeSourceMsgId !== pendingCitation.messageId) return;
+    if (pendingCitation.sourceNumber < 1 || pendingCitation.sourceNumber > displaySources.length) return;
+
+    scrollToSource(pendingCitation.sourceNumber);
+    pendingCitationRef.current = null;
+  }, [activeSourceMsgId, displaySources.length, scrollToSource, sourcePanelOpen]);
 
   // D-92: Escape closes panel and returns focus to trigger
   useEffect(() => {
@@ -73,6 +107,12 @@ export function SourcePanel({ messages }: SourcePanelProps) {
     }
   }, [sourcePanelOpen]);
 
+  useEffect(() => () => {
+    if (clearHighlightTimeoutRef.current) {
+      window.clearTimeout(clearHighlightTimeoutRef.current);
+    }
+  }, []);
+
   if (!sourcePanelOpen) {
     return null;
   }
@@ -86,12 +126,19 @@ export function SourcePanel({ messages }: SourcePanelProps) {
       style={{ display: 'flex', flexDirection: 'column' }}
     >
       {/* Header (D-23) */}
-      <Group justify="space-between" className="source-panel__header" style={{ flexShrink: 0 }}>
-        <Text fw={700} size="lg" component="h2">
-          Sources ({displaySources.length})
-        </Text>
-        <CloseButton onClick={closeSourcePanel} aria-label="Close source panel" />
-      </Group>
+      <Box className="source-panel__header" style={{ flexShrink: 0 }}>
+        <Group justify="space-between" align="flex-start" gap="sm">
+          <Box>
+            <Text fw={700} size="lg" component="h2">
+              Sources ({displaySources.length})
+            </Text>
+            <Text size="sm" c="dimmed">
+              Compare the exact excerpts that support the current answer.
+            </Text>
+          </Box>
+          <CloseButton onClick={closeSourcePanel} aria-label="Close source panel" />
+        </Group>
+      </Box>
 
       {/* Source cards or empty state (D-29: independent scroll) */}
       <div ref={scrollContainerRef} className="source-panel__body">

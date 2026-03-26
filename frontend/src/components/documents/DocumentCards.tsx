@@ -1,4 +1,4 @@
-import { Card, Text, Group, Stack, ActionIcon, Button } from '@mantine/core';
+import { Card, Text, Group, Stack, Button } from '@mantine/core';
 import { IconTrash, IconUpload } from '@tabler/icons-react';
 import { useDeleteDocument } from '../../hooks/useDocuments';
 import { DocumentStatusBadge } from './DocumentStatusBadge';
@@ -26,61 +26,67 @@ export function DocumentCards({ documents, projectId }: DocumentCardsProps) {
   const deleteDocument = useDeleteDocument();
 
   return (
-    <Stack gap="sm">
+    <Stack gap="xs">
       {documents.map((doc) => (
-        <Card key={doc.id} withBorder padding="sm" radius="md">
-          <Group justify="space-between" wrap="nowrap" mb="xs">
-            <Text size="sm" fw={700} truncate style={{ flex: 1 }}>
-              {doc.original_filename}
-            </Text>
-            <ActionIcon
-              variant="subtle"
-              color="red"
-              size="sm"
-              onClick={() =>
-                deleteDocument.mutate({ projectId, documentId: doc.id })
-              }
-              loading={deleteDocument.isPending}
-              aria-label={`Delete ${doc.original_filename}`}
-            >
-              <IconTrash size={14} />
-            </ActionIcon>
-          </Group>
-
-          <DocumentStatusBadge status={doc.status} />
-
-          {doc.status === 'failed' && doc.error_detail && (
-            <Stack gap="xs" mt="xs">
-              <Text size="xs" c="red">
-                {getErrorMessage(doc.error_detail)}
-              </Text>
+        <Card key={doc.id} withBorder padding="sm" radius="xl" className="surface-card document-mobile-card">
+          <Stack gap="sm">
+            <Group justify="space-between" wrap="nowrap" align="flex-start">
+              <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                <Text size="sm" fw={700} truncate>
+                  {doc.original_filename}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {doc.file_type.toUpperCase()} • {formatFileSize(doc.file_size)} • {doc.chunk_count} chunks
+                </Text>
+              </Stack>
               <Button
+                variant="subtle"
+                color="red"
                 size="xs"
-                variant="light"
-                leftSection={<IconUpload size={14} />}
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = '.txt,.md,.pdf';
-                  input.click();
-                }}
+                className="document-action-button"
+                leftSection={<IconTrash size={14} />}
+                onClick={() =>
+                  deleteDocument.mutate({ projectId, documentId: doc.id })
+                }
+                loading={deleteDocument.isPending}
+                aria-label={`Delete ${doc.original_filename}`}
               >
-                Re-upload
+                Delete
               </Button>
-            </Stack>
-          )}
+            </Group>
 
-          <Group gap="lg" mt="xs">
-            <Text size="xs" c="dimmed">
-              {doc.file_type}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {formatFileSize(doc.file_size)}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {doc.chunk_count} chunks
-            </Text>
-          </Group>
+            <DocumentStatusBadge status={doc.status} />
+
+            {doc.status === 'failed' && doc.error_detail && (
+              <Stack gap="xs">
+                <Text size="xs" c="red">
+                  {getErrorMessage(doc.error_detail)}
+                </Text>
+                <Button
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconUpload size={14} />}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.txt,.md,.pdf';
+                    input.click();
+                  }}
+                >
+                  Re-upload
+                </Button>
+              </Stack>
+            )}
+
+            <Group gap="sm" className="document-mobile-card__meta">
+              <Text size="xs" c="dimmed">
+                Ready for grounded answers
+              </Text>
+              <Text size="xs" c="dimmed">
+                Manage directly from this card
+              </Text>
+            </Group>
+          </Stack>
         </Card>
       ))}
     </Stack>

@@ -10,12 +10,12 @@ export function AdvancedSettingsSection({ form }: AdvancedSettingsSectionProps) 
   return (
     <Paper withBorder radius="xl" p="lg" className="surface-card">
       <Stack gap="md">
-        <div>
+        <Stack gap={4}>
           <Text fw={700}>Retrieval Controls</Text>
           <Text size="sm" c="dimmed">
             Adjust chunking and ranking only when you need to trade response quality against speed or recall.
           </Text>
-        </div>
+        </Stack>
 
         <Accordion variant="separated" radius="lg">
           <Accordion.Item value="advanced">

@@ -2,7 +2,7 @@ import { createTheme } from '@mantine/core';
 
 export const theme = createTheme({
   primaryColor: 'ocean',
-  primaryShade: 6,
+  primaryShade: 7,
   fontFamily: '"IBM Plex Sans", "Avenir Next", sans-serif',
   headings: {
     fontFamily: '"Space Grotesk", "IBM Plex Sans", sans-serif',

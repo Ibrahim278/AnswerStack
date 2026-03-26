@@ -10,18 +10,61 @@ import { useState } from 'react';
 import { useSystemStatus } from '../../hooks/useSystemStatus';
 import { useBuildIndex } from '../../hooks/useIndexing';
 import { useTestConnection } from '../../hooks/useProvider';
+import { isValidUuid } from '../../utils/isValidUuid';
 
-const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
-  ready: { color: 'green', label: 'Ready' },
-  indexing: { color: 'blue', label: 'Indexing' },
-  misconfigured: { color: 'red', label: 'Misconfigured' },
-  degraded: { color: 'yellow', label: 'Degraded' },
-  no_documents: { color: 'gray', label: 'No Documents' },
-  stale: { color: 'orange', label: 'Stale' },
+const STATUS_CONFIG: Record<string, { color: string; label: string; bg: string; text: string; border: string }> = {
+  ready: {
+    color: 'green',
+    label: 'Ready',
+    bg: 'rgba(18, 128, 109, 0.14)',
+    text: '#0f5147',
+    border: 'rgba(18, 128, 109, 0.22)',
+  },
+  indexing: {
+    color: 'blue',
+    label: 'Indexing',
+    bg: 'rgba(20, 92, 176, 0.12)',
+    text: '#124a87',
+    border: 'rgba(20, 92, 176, 0.18)',
+  },
+  misconfigured: {
+    color: 'red',
+    label: 'Setup needed',
+    bg: 'rgba(176, 44, 44, 0.12)',
+    text: '#8d2424',
+    border: 'rgba(176, 44, 44, 0.18)',
+  },
+  degraded: {
+    color: 'yellow',
+    label: 'Attention',
+    bg: 'rgba(173, 118, 22, 0.14)',
+    text: '#7a4d0d',
+    border: 'rgba(173, 118, 22, 0.2)',
+  },
+  no_documents: {
+    color: 'gray',
+    label: 'No docs yet',
+    bg: 'rgba(73, 91, 82, 0.12)',
+    text: '#33463e',
+    border: 'rgba(73, 91, 82, 0.16)',
+  },
+  stale: {
+    color: 'orange',
+    label: 'Needs rebuild',
+    bg: 'rgba(183, 111, 21, 0.14)',
+    text: '#7f4b08',
+    border: 'rgba(183, 111, 21, 0.2)',
+  },
 };
 
 function getStatusConfig(status: string) {
-  return STATUS_CONFIG[status] ?? { color: 'gray', label: status };
+  return STATUS_CONFIG[status] ?? {
+    color: 'gray',
+    label: status,
+    bg: 'rgba(73, 91, 82, 0.12)',
+    text: '#33463e',
+    border: 'rgba(73, 91, 82, 0.16)',
+  };
 }
 
 function SubsystemRow({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
@@ -45,9 +88,19 @@ export function StatusBadge() {
   const [opened, setOpened] = useState(false);
   const navigate = useNavigate();
   const params = useParams<{ id: string }>();
-  const { data } = useSystemStatus(params.id);
+  const routeHasProjectParam = typeof params.id === 'string';
+  const projectId = isValidUuid(params.id) ? params.id : undefined;
+  const { data } = useSystemStatus(routeHasProjectParam ? projectId ?? '' : undefined);
   const buildIndex = useBuildIndex();
   const testConnection = useTestConnection();
+
+  if (routeHasProjectParam && !projectId) {
+    return (
+      <Badge color="gray" variant="light" size="lg" radius="xl">
+        Link issue
+      </Badge>
+    );
+  }
 
   if (!data) {
     return (
@@ -58,6 +111,7 @@ export function StatusBadge() {
   }
 
   const { color, label } = getStatusConfig(data.status);
+  const badgeTone = getStatusConfig(data.status);
   const isIndexing = data.status === 'indexing';
 
   return (
@@ -70,6 +124,9 @@ export function StatusBadge() {
           radius="xl"
           style={{
             cursor: 'pointer',
+            background: badgeTone.bg,
+            color: badgeTone.text,
+            border: `1px solid ${badgeTone.border}`,
             ...(isIndexing
               ? { animation: 'pulse 2s ease-in-out infinite' }
               : {}),
@@ -112,8 +169,8 @@ export function StatusBadge() {
                   : data.project.index_status === 'indexed'
                     ? 'Up to date'
                     : data.project.index_status === 'stale'
-                      ? 'Stale'
-                      : 'Not built'
+                    ? 'Needs rebuild'
+                    : 'Not built'
               }
             />
           )}

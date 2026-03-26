@@ -10,12 +10,16 @@ import {
   Group,
   ActionIcon,
   Select,
+  Badge,
+  ThemeIcon,
 } from '@mantine/core';
 import {
   IconPlus,
   IconSettings,
   IconFolder,
   IconMessage2,
+  IconCircleFilled,
+  IconCheck,
 } from '@tabler/icons-react';
 import { useNavigate, useLocation } from 'react-router';
 import { useProjects } from '../../hooks/useProjects';
@@ -26,12 +30,59 @@ interface MobileDrawerProps {
   onClose: () => void;
 }
 
+function getStatusColor(status: string | undefined): string {
+  switch (status) {
+    case 'indexed':
+      return 'green';
+    case 'stale':
+      return 'orange';
+    case 'indexing':
+      return 'blue';
+    case 'failed':
+      return 'red';
+    default:
+      return 'gray';
+  }
+}
+
+function getStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case 'indexed':
+      return 'Indexed';
+    case 'stale':
+      return 'Needs rebuild';
+    case 'indexing':
+      return 'Indexing';
+    case 'failed':
+      return 'Needs attention';
+    default:
+      return 'Not indexed';
+  }
+}
+
+function formatRelativeTime(dateString: string | null | undefined): string {
+  if (!dateString) return 'Recently updated';
+
+  const date = new Date(dateString);
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMinutes < 1) return 'Updated just now';
+  if (diffMinutes < 60) return `Updated ${diffMinutes}m ago`;
+  if (diffHours < 24) return `Updated ${diffHours}h ago`;
+  if (diffDays < 30) return `Updated ${diffDays}d ago`;
+  return `Updated ${date.toLocaleDateString()}`;
+}
+
 export function MobileDrawer({ opened, onClose }: MobileDrawerProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: projectsData } = useProjects();
 
   const projects = projectsData?.items ?? [];
+  const projectsById = new Map(projects.map((project) => [project.id, project]));
   const projectOptions = projects.map((project) => ({
     value: project.id,
     label: project.name,
@@ -39,6 +90,7 @@ export function MobileDrawer({ opened, onClose }: MobileDrawerProps) {
   const projectMatch = location.pathname.match(/\/projects\/([^/]+)/);
   const activeProjectId = projectMatch?.[1] ?? null;
   const chatTargetProjectId = activeProjectId ?? projects[0]?.id ?? null;
+  const activeProject = activeProjectId ? projectsById.get(activeProjectId) : null;
 
   const handleNewChat = () => {
     if (chatTargetProjectId) {
@@ -65,7 +117,7 @@ export function MobileDrawer({ opened, onClose }: MobileDrawerProps) {
       size={280}
       padding="md"
       title="AnswerStack"
-      hiddenFrom="sm"
+      hiddenFrom="md"
     >
       <Stack h="calc(100vh - 120px)" gap={0}>
         <Box className="sidebar-action-wrap">
@@ -125,7 +177,57 @@ export function MobileDrawer({ opened, onClose }: MobileDrawerProps) {
                 searchable={projects.length > 6}
                 nothingFoundMessage="No projects"
                 checkIconPosition="right"
+                renderOption={({ option, checked }) => {
+                  const project = projectsById.get(option.value);
+                  const statusColor = getStatusColor(project?.index_status);
+                  return (
+                    <Group justify="space-between" wrap="nowrap" gap="sm">
+                      <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
+                        <Text fw={checked ? 700 : 600} truncate>
+                          {option.label}
+                        </Text>
+                        {project && (
+                          <Text size="xs" c="dimmed" truncate>
+                            {getStatusLabel(project.index_status)} · {formatRelativeTime(project.last_used_at ?? project.updated_at)}
+                          </Text>
+                        )}
+                      </Stack>
+                      <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
+                        <IconCircleFilled
+                          size={10}
+                          style={{ color: `var(--mantine-color-${statusColor}-6)` }}
+                        />
+                        {checked && (
+                          <ThemeIcon size="sm" radius="xl" variant="light" color="ocean">
+                            <IconCheck size={12} />
+                          </ThemeIcon>
+                        )}
+                      </Group>
+                    </Group>
+                  );
+                }}
               />
+            )}
+            {activeProject && (
+              <Box className="sidebar-project-summary">
+                <Group justify="space-between" align="center" gap="xs">
+                  <Stack gap={2}>
+                    <Text size="sm" fw={600} truncate>
+                      {activeProject.name}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {formatRelativeTime(activeProject.last_used_at ?? activeProject.updated_at)}
+                    </Text>
+                  </Stack>
+                  <Badge
+                    variant="light"
+                    color={getStatusColor(activeProject.index_status)}
+                    radius="xl"
+                  >
+                    {getStatusLabel(activeProject.index_status)}
+                  </Badge>
+                </Group>
+              </Box>
             )}
           </Box>
 

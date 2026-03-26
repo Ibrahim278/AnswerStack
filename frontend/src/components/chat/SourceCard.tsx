@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Paper, Group, Text, Badge, ActionIcon, Tooltip } from '@mantine/core';
+import { Paper, Group, Text, Badge, ActionIcon, Tooltip, Box, Button } from '@mantine/core';
 import { IconCopy, IconCheck, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import type { SSESourceItem } from '../../types';
 import { RelevanceBadge } from './RelevanceBadge';
@@ -8,6 +8,19 @@ interface SourceCardProps {
   source: SSESourceItem;
   index: number;      // 0-based, displayed as index+1
   highlighted: boolean; // D-21: colored left border when scrolled-to
+}
+
+function normalizeExcerpt(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, '').trim())
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\$\$?([^$]+)\$\$?/g, '$1')
+    .replace(/\\text\{([^}]+)\}/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/\|/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function SourceCard({ source, index, highlighted }: SourceCardProps) {
@@ -32,10 +45,10 @@ export function SourceCard({ source, index, highlighted }: SourceCardProps) {
     });
   };
 
-  // Truncated excerpt: ~3 lines = ~200 chars
-  const TRUNCATE_LENGTH = 200;
-  const needsTruncation = source.chunk_text.length > TRUNCATE_LENGTH;
-  const displayText = expanded ? source.chunk_text : source.chunk_text.slice(0, TRUNCATE_LENGTH);
+  const cleanedExcerpt = normalizeExcerpt(source.chunk_text);
+  const TRUNCATE_LENGTH = 260;
+  const needsTruncation = cleanedExcerpt.length > TRUNCATE_LENGTH;
+  const displayText = expanded ? cleanedExcerpt : cleanedExcerpt.slice(0, TRUNCATE_LENGTH);
 
   return (
     <Paper
@@ -49,7 +62,7 @@ export function SourceCard({ source, index, highlighted }: SourceCardProps) {
         transition: 'box-shadow 150ms ease, border-color 200ms ease-out',
         cursor: 'pointer',
       }}
-      tabIndex={0}
+      tabIndex={-1}
       role="article"
       aria-label={`Source ${index + 1}: ${source.document_name}`}
       aria-expanded={expanded}
@@ -78,32 +91,38 @@ export function SourceCard({ source, index, highlighted }: SourceCardProps) {
         </Group>
       </Group>
 
-      {/* Excerpt text (D-22: expand/collapse) */}
-      <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
-        {displayText}
-        {needsTruncation && !expanded && '...'}
-      </Text>
+      <Box mb="xs">
+        <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6} style={{ letterSpacing: '0.08em' }}>
+          Evidence excerpt
+        </Text>
+        <Text size="sm" c="dimmed" style={{ whiteSpace: expanded ? 'pre-wrap' : 'normal', lineHeight: 1.6 }}>
+          {displayText}
+          {needsTruncation && !expanded && '...'}
+        </Text>
+      </Box>
 
       {/* Bottom actions: expand + copy */}
       <Group justify="space-between" mt="xs">
         {needsTruncation && (
-          <ActionIcon
+          <Button
             variant="subtle"
-            size="sm"
+            size="compact-sm"
+            color="gray"
+            rightSection={expanded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
             onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
             aria-label={expanded ? 'Collapse excerpt' : 'Expand excerpt'}
           >
-            {expanded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
-          </ActionIcon>
+            {expanded ? 'Show less' : 'Show more'}
+          </Button>
         )}
         <Tooltip label={copied ? 'Copied!' : 'Copy excerpt'} position="left">
           <ActionIcon
             variant="subtle"
-            size="sm"
+            size="md"
             onClick={(e) => { e.stopPropagation(); handleCopyExcerpt(); }}
             aria-label="Copy to clipboard"
           >
-            {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+            {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
           </ActionIcon>
         </Tooltip>
       </Group>

@@ -150,9 +150,12 @@ export default function ChatPage() {
   return (
     <Box className="chat-shell">
       {/* Main chat area */}
-      <Box className="chat-column chat-surface">
+      <Box
+        className="chat-column chat-surface"
+        style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}
+      >
         <Box className="chat-topbar">
-          <Group justify="space-between" align="flex-start">
+          <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
             <Stack gap={6}>
               <Text className="page-intro__eyebrow" mb={0}>
                 Chat Workspace
@@ -165,7 +168,7 @@ export default function ChatPage() {
               </Text>
             </Stack>
 
-            <Group gap="sm">
+            <Group gap="sm" wrap="wrap">
               <span className="page-pill">
                 <IconSparkles size={16} />
                 {messages.length} {messages.length === 1 ? 'message' : 'messages'}
@@ -184,68 +187,80 @@ export default function ChatPage() {
           </Group>
         </Box>
 
-        {/* Warning banners */}
-        <Stack gap="sm" p="md" pb={0}>
-          {providerNotConfigured && (
-            <ErrorBanner
-              title="Provider not configured"
-              message="Set up your LLM provider to enable chat"
-              color="yellow"
-              actions={[{
-                label: 'Go to Settings',
-                onClick: () => { void navigate('/settings'); },
-              }]}
-            />
-          )}
-          {systemStatus === 'no_documents' && (
-            <ErrorBanner
-              title="No documents indexed"
-              message="Upload and index documents to get source-grounded answers"
-              color="blue"
-              actions={[{
-                label: 'Go to Project',
-                onClick: () => { void navigate(`/projects/${projectId}`); },
-              }]}
-            />
-          )}
-          {systemStatus === 'stale' && (
-            <Alert
-              color="yellow"
-              icon={<IconRefresh size={18} />}
-              py="xs"
-              radius="xl"
-            >
-              Index may be out of date. Answers might not reflect recent document changes.{' '}
-              <a
-                href={`/projects/${projectId}`}
-                onClick={(e) => { e.preventDefault(); void navigate(`/projects/${projectId}`); }}
-                style={{ color: 'var(--mantine-color-ocean-7)' }}
+        <Box style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          {/* Warning banners */}
+          <Stack gap="sm" p="md" pb={0}>
+            {providerNotConfigured && (
+              <ErrorBanner
+                title="Provider not configured"
+                message="Set up your LLM provider to enable chat"
+                color="yellow"
+                actions={[{
+                  label: 'Go to Settings',
+                  onClick: () => { void navigate('/settings'); },
+                }]}
+              />
+            )}
+            {systemStatus === 'no_documents' && (
+              <ErrorBanner
+                title="No documents indexed"
+                message="Upload and index documents to get source-grounded answers"
+                color="blue"
+                actions={[{
+                  label: 'Go to Project',
+                  onClick: () => { void navigate(`/projects/${projectId}`); },
+                }]}
+              />
+            )}
+            {systemStatus === 'stale' && (
+              <Alert
+                color="yellow"
+                icon={<IconRefresh size={18} />}
+                py="xs"
+                radius="xl"
               >
-                Rebuild index
-              </a>
-            </Alert>
-          )}
-        </Stack>
+                Index may be out of date. Answers might not reflect recent document changes.{' '}
+                <a
+                  href={`/projects/${projectId}`}
+                  onClick={(e) => { e.preventDefault(); void navigate(`/projects/${projectId}`); }}
+                  style={{ color: 'var(--mantine-color-ocean-7)' }}
+                >
+                  Rebuild index
+                </a>
+              </Alert>
+            )}
+          </Stack>
 
-        {/* Chat content */}
+          {/* Chat content */}
         {hasMessages ? (
           <ChatMessageList messages={messages} onRetry={retry} />
         ) : (
-          <ChatEmptyState
-            projectName={project?.name ?? 'your project'}
-            suggestedPrompts={suggestedPrompts}
-            isSuggestedPromptsLoading={suggestedPromptsLoading}
-            onPromptSelect={handlePromptSelect}
-          />
-        )}
+          <Box
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              alignItems: isMobile ? 'flex-start' : 'center',
+              paddingTop: isMobile ? '0.5rem' : undefined,
+            }}
+          >
+            <ChatEmptyState
+              projectName={project?.name ?? 'your project'}
+              suggestedPrompts={suggestedPrompts}
+              isSuggestedPromptsLoading={suggestedPromptsLoading}
+                onPromptSelect={handlePromptSelect}
+              />
+            </Box>
+          )}
 
-        {/* Composer */}
-        <ChatComposer
-          onSend={handleSend}
-          onStop={stop}
-          isStreaming={isStreaming}
-          disabled={composerDisabled}
-        />
+          {/* Composer */}
+          <ChatComposer
+            onSend={handleSend}
+            onStop={stop}
+            isStreaming={isStreaming}
+            disabled={composerDisabled}
+          />
+        </Box>
       </Box>
 
       {/* Source panel -- desktop only (D-01, D-04) */}
