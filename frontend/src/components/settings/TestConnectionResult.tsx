@@ -31,7 +31,7 @@ interface CapabilityRowProps {
 function CapabilityRow({ label, result, isPending }: CapabilityRowProps) {
   return (
     <Group gap="sm" align="flex-start">
-      <Text fw={600} size="sm" w={80}>
+      <Text fw={700} size="sm" w={80}>
         {label}:
       </Text>
       {getCapabilityBadge(result, isPending)}

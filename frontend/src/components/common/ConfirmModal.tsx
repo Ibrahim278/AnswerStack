@@ -34,7 +34,7 @@ export function ConfirmModal({
       title={
         <Group gap="xs" wrap="nowrap">
           {icon}
-          <Text fw={600}>{title}</Text>
+          <Text fw={700}>{title}</Text>
         </Group>
       }
       fullScreen={isMobile ?? false}

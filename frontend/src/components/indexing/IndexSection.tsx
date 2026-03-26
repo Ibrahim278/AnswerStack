@@ -67,7 +67,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
         <Stack gap="sm">
           <Group justify="space-between" align="center">
             <div>
-              <Text size="sm" fw={500}>
+              <Text size="sm" fw={700}>
                 Indexing in progress
               </Text>
               <Text size="xs" c="dimmed">
@@ -140,7 +140,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
       <Paper withBorder p="md" radius="md">
         <Group justify="space-between" align="center">
           <div>
-            <Text size="sm" fw={500} c="orange">
+            <Text size="sm" fw={700} c="orange">
               Index is out of date
             </Text>
             {lastIndexed && (
@@ -170,7 +170,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
       <Paper withBorder p="md" radius="md">
         <Group justify="space-between" align="center">
           <div>
-            <Text size="sm" fw={500} c="green">
+            <Text size="sm" fw={700} c="green">
               Index up to date
             </Text>
             {lastIndexed && (

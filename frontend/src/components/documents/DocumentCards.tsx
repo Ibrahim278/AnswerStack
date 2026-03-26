@@ -30,7 +30,7 @@ export function DocumentCards({ documents, projectId }: DocumentCardsProps) {
       {documents.map((doc) => (
         <Card key={doc.id} withBorder padding="sm" radius="md">
           <Group justify="space-between" wrap="nowrap" mb="xs">
-            <Text size="sm" fw={500} truncate style={{ flex: 1 }}>
+            <Text size="sm" fw={700} truncate style={{ flex: 1 }}>
               {doc.original_filename}
             </Text>
             <ActionIcon

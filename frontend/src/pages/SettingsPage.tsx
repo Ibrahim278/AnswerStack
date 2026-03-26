@@ -200,7 +200,7 @@ export default function SettingsPage() {
           disabled={!form.isDirty()}
           onClick={handleSave}
         >
-          Save
+          Save Settings
         </Button>
       </Group>
 
@@ -210,7 +210,7 @@ export default function SettingsPage() {
         onConfirm={handleReset}
         title="Reset to Defaults?"
         message="This will reset all settings to their default values. Your provider configuration will be cleared."
-        confirmLabel="Reset"
+        confirmLabel="Reset Settings"
         loading={resetSettings.isPending}
         icon={<IconRestore size={20} />}
       />

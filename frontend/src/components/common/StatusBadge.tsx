@@ -81,7 +81,7 @@ export function StatusBadge() {
 
       <Popover.Dropdown miw={280}>
         <Stack gap="sm">
-          <Text fw={600} size="sm">
+          <Text fw={700} size="sm">
             System Status
           </Text>
           <Divider />

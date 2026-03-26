@@ -68,7 +68,7 @@ function SortableHeader({
   return (
     <UnstyledButton onClick={() => onSort(field)}>
       <Group gap={4} wrap="nowrap">
-        <Text size="sm" fw={500}>
+        <Text size="sm" fw={700}>
           {label}
         </Text>
         {isActive &&
