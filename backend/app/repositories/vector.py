@@ -59,6 +59,11 @@ class VectorRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    def query_random_chunks(self, collection_name: str, n: int = 10) -> list[str]:
+        """Get N random chunk texts from a collection for prompt generation."""
+        ...
+
 
 class ChromaDBVectorRepository(VectorRepository):
     """Concrete VectorRepository backed by ChromaDB PersistentClient."""
@@ -143,3 +148,13 @@ class ChromaDBVectorRepository(VectorRepository):
             "metadatas": results["metadatas"][0] if results["metadatas"] else [],
             "distances": results["distances"][0] if results["distances"] else [],
         }
+
+    def query_random_chunks(self, collection_name: str, n: int = 10) -> list[str]:
+        """Get N random chunk texts from a collection for prompt generation."""
+        try:
+            collection = self._client.get_collection(collection_name)
+            # ChromaDB peek returns random documents
+            results = collection.peek(limit=n)
+            return results.get("documents", []) or []
+        except Exception:
+            return []

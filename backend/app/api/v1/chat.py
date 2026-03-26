@@ -186,6 +186,14 @@ async def stream_chat(
                     ),
                 }
 
+                # retrieval_start event (D-88, D-89)
+                event_seq += 1
+                yield {
+                    "event": "retrieval_start",
+                    "id": str(event_seq),
+                    "data": json.dumps({}),
+                }
+
                 # Retrieve relevant chunks (RETR-01)
                 retrieval_service = RetrievalService(
                     vector_repo, embedding_service, ranker
@@ -201,6 +209,8 @@ async def stream_chat(
 
                 # No-context handling (CHAT-08)
                 if not chunks:
+                    # retrieval_start already emitted above; emit sources
+                    # immediately so frontend gets consistent sequence
                     no_answer = (
                         "I don't have enough information in the provided sources "
                         "to answer this question. Please ensure the project has "
