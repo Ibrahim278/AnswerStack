@@ -7,7 +7,6 @@ interface ConnectionOverlayProps {
   onRetry: () => void;
 }
 
-// Stub - full implementation in Task 3
 export function ConnectionOverlay({ visible, onRetry }: ConnectionOverlayProps) {
   const [countdown, setCountdown] = useState(10);
 
