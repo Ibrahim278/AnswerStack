@@ -43,11 +43,19 @@ export function SuggestedPrompts({ dynamicPrompts, isLoading, onSelect }: Sugges
             color="gray"
             size="sm"
             onClick={() => onSelect(prompt)}
-            style={{
-              whiteSpace: 'normal',
-              height: 'auto',
-              padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
-              textAlign: 'left',
+            styles={{
+              root: {
+                whiteSpace: 'normal',
+                height: 'auto',
+                padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
+                textAlign: 'left',
+              },
+              label: {
+                whiteSpace: 'normal',
+                lineHeight: 1.3,
+                overflow: 'visible',
+                textOverflow: 'unset',
+              },
             }}
           >
             {prompt}
