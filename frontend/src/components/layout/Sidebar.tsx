@@ -3,6 +3,7 @@ import { IconPlus, IconSettings, IconFolder, IconCircleFilled } from '@tabler/ic
 import { useNavigate, useLocation } from 'react-router';
 import { useProjects } from '../../hooks/useProjects';
 import { useUiStore } from '../../stores/uiStore';
+import { SessionList } from '../chat/SessionList';
 
 const STATUS_COLORS: Record<string, string> = {
   indexed: 'green',
@@ -23,6 +24,10 @@ export function Sidebar() {
   const { data: projectsData } = useProjects();
 
   const projects = projectsData?.items ?? [];
+
+  // Extract projectId from URL for session list context
+  const projectMatch = location.pathname.match(/\/projects\/([^/]+)/);
+  const activeProjectId = projectMatch?.[1] ?? null;
 
   return (
     <Stack h="100%" gap={0}>
@@ -101,6 +106,9 @@ export function Sidebar() {
           );
         })}
       </ScrollArea>
+
+      {/* Session list when project is active */}
+      {activeProjectId && <SessionList projectId={activeProjectId} />}
 
       {/* Bottom settings link */}
       <Box p="xs" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
