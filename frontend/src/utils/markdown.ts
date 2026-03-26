@@ -48,8 +48,13 @@ export function stripMarkdownAndCitations(markdown: string): string {
 }
 
 /**
- * Process [Source N] citations in text, replacing with a marker that react-markdown
+ * Process citations in text, replacing with a marker that react-markdown
  * can render as a custom link. Uses a special URL scheme: citation://N
+ *
+ * Supports multiple citation formats from different LLMs:
+ * - [Source N] (standard format)
+ * - <sup>N</sup> (HTML superscript from some models)
+ * - [^N^] (markdown superscript)
  *
  * Also strips <think> blocks from reasoning models.
  *
@@ -57,8 +62,15 @@ export function stripMarkdownAndCitations(markdown: string): string {
  */
 export function processCitations(text: string): string {
   const cleaned = stripThinkBlocks(text);
-  return cleaned.replace(
-    /\[Source (\d+)\]/g,
-    '[^$1^](citation://$1)',
-  );
+  return cleaned
+    // [Source N] -> citation link
+    .replace(
+      /\[Source (\d+)\]/g,
+      '[^$1^](citation://$1)',
+    )
+    // <sup>N</sup> -> citation link (LLMs outputting HTML superscripts)
+    .replace(
+      /<sup>(\d+)<\/sup>/gi,
+      '[^$1^](citation://$1)',
+    );
 }
