@@ -20,3 +20,16 @@ export type {
   LivenessResponse,
   ReadinessResponse,
 } from './api.generated';
+
+export type {
+  SSEMessageStart,
+  SSERetrievalStart,
+  SSESourceItem,
+  SSEMessageComplete,
+  SSEError,
+  ChatSessionResponse,
+  ChatMessageResponse,
+  ChatSessionDetailResponse,
+  SuggestedPromptsResponse,
+  StreamPhase,
+} from './chat';

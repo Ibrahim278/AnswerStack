@@ -10,6 +10,11 @@ export const queryKeys = {
     testConnection: ['provider', 'test-connection'] as const,
   },
   indexing: (projectId: string) => ['projects', projectId, 'indexing'] as const,
+  sessions: {
+    list: (projectId: string) => ['projects', projectId, 'sessions'] as const,
+    detail: (sessionId: string) => ['sessions', sessionId] as const,
+  },
+  suggestedPrompts: (projectId: string) => ['projects', projectId, 'suggested-prompts'] as const,
   systemStatus: (projectId?: string) => ['system-status', projectId] as const,
   health: ['health'] as const,
 };
