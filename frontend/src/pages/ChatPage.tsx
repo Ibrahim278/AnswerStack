@@ -11,7 +11,6 @@ import { useSessionDetail } from '../hooks/useSessions';
 import { useSuggestedPrompts } from '../hooks/useSuggestedPrompts';
 import { useSystemStatus } from '../hooks/useSystemStatus';
 import { useProject } from '../hooks/useProjects';
-import { useChatStore } from '../stores/chatStore';
 import { ChatMessageList } from '../components/chat/ChatMessageList';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { ChatEmptyState } from '../components/chat/ChatEmptyState';
@@ -52,8 +51,6 @@ export default function ChatPage() {
     projectId: projectId!,
     onSessionCreated: handleSessionCreated,
   });
-
-  const { streamError: _streamError } = useChatStore();
 
   // Determine if composer should be disabled
   const providerNotConfigured = systemStatus === 'misconfigured';

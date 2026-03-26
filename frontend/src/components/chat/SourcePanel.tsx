@@ -1,30 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
-import { Box, Group, Text, ScrollArea, CloseButton } from '@mantine/core';
-import { useFocusTrap } from '@mantine/hooks';
+import { Box, Group, Text, CloseButton } from '@mantine/core';
 import { useChatStore } from '../../stores/chatStore';
 import type { SSESourceItem, ChatMessageResponse } from '../../types';
 import { SourceCard } from './SourceCard';
 import { SourcePanelEmpty } from './SourcePanelEmpty';
+
+// Stable empty array to avoid re-creating on every render
+const EMPTY_SOURCES: SSESourceItem[] = [];
 
 interface SourcePanelProps {
   messages: ChatMessageResponse[];
 }
 
 export function SourcePanel({ messages }: SourcePanelProps) {
-  const { sourcePanelOpen, activeSourceMsgId, closeSourcePanel } = useChatStore();
+  // Use individual selectors to avoid subscribing to entire store (prevents infinite re-render loops)
+  const sourcePanelOpen = useChatStore((s) => s.sourcePanelOpen);
+  const activeSourceMsgId = useChatStore((s) => s.activeSourceMsgId);
+  const closeSourcePanel = useChatStore((s) => s.closeSourcePanel);
   const [highlightedSource, setHighlightedSource] = useState<number | null>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const focusTrapRef = useFocusTrap(sourcePanelOpen);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
   // Find sources for active message
   const activeMessage = messages.find((m) => m.id === activeSourceMsgId);
-  const sources: SSESourceItem[] = (activeMessage?.sources_json as SSESourceItem[]) ?? [];
+  const sources: SSESourceItem[] = (activeMessage?.sources_json as SSESourceItem[]) ?? EMPTY_SOURCES;
 
-  // Also check streaming state for sources
-  const streamingSources = useChatStore((s) =>
-    s.streamingMessageId === activeSourceMsgId ? s.currentSources : [],
-  );
+  // Also check streaming state for sources -- use stable reference for empty array
+  const streamingMsgId = useChatStore((s) => s.streamingMessageId);
+  const currentSources = useChatStore((s) => s.currentSources);
+  const streamingSources = streamingMsgId === activeSourceMsgId ? currentSources : EMPTY_SOURCES;
   const displaySources = sources.length > 0 ? sources : streamingSources;
 
   // D-21: Listen for citation-click events to scroll to card
@@ -34,13 +38,11 @@ export function SourcePanel({ messages }: SourcePanelProps) {
       const sourceNumber = detail?.sourceNumber;
       if (typeof sourceNumber === 'number') {
         setHighlightedSource(sourceNumber);
-        // Wait for panel animation to finish (D-09: 200ms), then scroll
         setTimeout(() => {
-          const card = scrollAreaRef.current?.querySelector(
+          const card = scrollContainerRef.current?.querySelector(
             `[data-source-index="${sourceNumber}"]`,
           );
           card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          // Clear highlight after 3s
           setTimeout(() => setHighlightedSource(null), 3000);
         }, 220);
       }
@@ -69,17 +71,20 @@ export function SourcePanel({ messages }: SourcePanelProps) {
     }
   }, [sourcePanelOpen]);
 
+  if (!sourcePanelOpen) {
+    return null;
+  }
+
   return (
     <Box
-      ref={focusTrapRef}
       role="complementary"
       aria-label="Source evidence"
+      tabIndex={0}
       style={{
-        width: sourcePanelOpen ? '380px' : '0px',
-        minWidth: sourcePanelOpen ? '380px' : '0px',
+        width: '380px',
+        minWidth: '380px',
         overflow: 'hidden',
-        transition: 'width 200ms ease-out, min-width 200ms ease-out',
-        borderLeft: sourcePanelOpen ? '1px solid var(--mantine-color-default-border)' : 'none',
+        borderLeft: '1px solid var(--mantine-color-default-border)',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
@@ -94,14 +99,17 @@ export function SourcePanel({ messages }: SourcePanelProps) {
       </Group>
 
       {/* Source cards or empty state (D-29: independent scroll) */}
-      <ScrollArea style={{ flex: 1 }} p="md" viewportRef={scrollAreaRef}>
+      <div
+        ref={scrollContainerRef}
+        style={{ flex: 1, overflowY: 'auto', padding: 'var(--mantine-spacing-md)' }}
+      >
         {displaySources.length === 0 ? (
           <SourcePanelEmpty />
         ) : (
           <Box style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {displaySources
               .slice()
-              .sort((a, b) => b.relevance_score - a.relevance_score) // D-20: ordered by relevance
+              .sort((a, b) => b.relevance_score - a.relevance_score)
               .map((source, idx) => (
                 <SourceCard
                   key={`${activeSourceMsgId}-${idx}`}
@@ -112,7 +120,7 @@ export function SourcePanel({ messages }: SourcePanelProps) {
               ))}
           </Box>
         )}
-      </ScrollArea>
+      </div>
     </Box>
   );
 }

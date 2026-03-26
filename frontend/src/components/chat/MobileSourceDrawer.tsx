@@ -4,19 +4,25 @@ import type { SSESourceItem, ChatMessageResponse } from '../../types';
 import { SourceCard } from './SourceCard';
 import { SourcePanelEmpty } from './SourcePanelEmpty';
 
+// Stable empty array to avoid re-creating on every render (React 19 / Zustand compat)
+const EMPTY_SOURCES: SSESourceItem[] = [];
+
 interface MobileSourceDrawerProps {
   messages: ChatMessageResponse[];
 }
 
 export function MobileSourceDrawer({ messages }: MobileSourceDrawerProps) {
-  const { sourcePanelOpen, activeSourceMsgId, closeSourcePanel } = useChatStore();
+  // Use individual selectors to avoid subscribing to entire store (prevents infinite re-render loops)
+  const sourcePanelOpen = useChatStore((s) => s.sourcePanelOpen);
+  const activeSourceMsgId = useChatStore((s) => s.activeSourceMsgId);
+  const closeSourcePanel = useChatStore((s) => s.closeSourcePanel);
 
   const activeMessage = messages.find((m) => m.id === activeSourceMsgId);
-  const sources: SSESourceItem[] = (activeMessage?.sources_json as SSESourceItem[]) ?? [];
+  const sources: SSESourceItem[] = (activeMessage?.sources_json as SSESourceItem[]) ?? EMPTY_SOURCES;
 
-  const streamingSources = useChatStore((s) =>
-    s.streamingMessageId === activeSourceMsgId ? s.currentSources : [],
-  );
+  const streamingMsgId = useChatStore((s) => s.streamingMessageId);
+  const currentSources = useChatStore((s) => s.currentSources);
+  const streamingSources = streamingMsgId === activeSourceMsgId ? currentSources : EMPTY_SOURCES;
   const displaySources = sources.length > 0 ? sources : streamingSources;
 
   return (
