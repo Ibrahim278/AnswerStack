@@ -1,0 +1,22 @@
+// Re-export commonly used types from api.generated.ts
+export type {
+  ErrorResponse,
+  PaginatedResponse,
+  ProjectCreate,
+  ProjectUpdate,
+  ProjectResponse,
+  DocumentResponse,
+  RejectedFile,
+  DocumentUploadResult,
+  SettingsResponse,
+  SettingsUpdate,
+  IndexingJobResponse,
+  IndexingStatusResponse,
+  IndexingTriggerResponse,
+  CapabilityResult,
+  ConnectionTestResult,
+  ModelInfo,
+  ModelListResponse,
+  LivenessResponse,
+  ReadinessResponse,
+} from './api.generated';
