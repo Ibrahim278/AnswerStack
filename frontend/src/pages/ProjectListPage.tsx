@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Title,
   SimpleGrid,
@@ -9,6 +9,7 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconPlus, IconStack2 } from '@tabler/icons-react';
+import { useSearchParams, useNavigate } from 'react-router';
 import { useProjects } from '../hooks/useProjects';
 import { ProjectCard } from '../components/projects/ProjectCard';
 import { CreateProjectModal } from '../components/projects/CreateProjectModal';
@@ -28,8 +29,19 @@ function ProjectListSkeleton() {
 
 export default function ProjectListPage() {
   const { data, isLoading } = useProjects();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [createOpened, createHandlers] = useDisclosure(false);
   const [deleteProject, setDeleteProject] = useState<ProjectResponse | null>(null);
+
+  // Open create modal when navigated from sidebar with ?new=1
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      createHandlers.open();
+      // Remove the query param so refreshing doesn't reopen the modal
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, createHandlers, setSearchParams]);
 
   const projects = data?.items ?? [];
 
@@ -78,7 +90,7 @@ export default function ProjectListPage() {
           <ProjectCard
             key={project.id}
             project={project}
-            onEdit={() => void 0}
+            onEdit={() => { void navigate(`/projects/${project.id}`); }}
             onDelete={() => setDeleteProject(project)}
           />
         ))}
