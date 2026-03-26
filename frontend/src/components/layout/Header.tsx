@@ -40,13 +40,27 @@ export function Header({ onMobileMenuToggle, mobileMenuOpened }: HeaderProps) {
           size="sm"
           aria-label="Toggle sidebar"
         />
-        {/* App name */}
-        <Group gap={6} wrap="nowrap">
+        {/* App name -- clickable logo navigates to projects */}
+        <Box
+          component="button"
+          onClick={() => { void navigate('/projects'); }}
+          style={{
+            cursor: 'pointer',
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            color: 'inherit',
+          }}
+          aria-label="Go to projects"
+        >
           <IconStack2 size={24} stroke={1.5} />
           <Text fw={700} size="lg" visibleFrom="xs">
             AnswerStack
           </Text>
-        </Group>
+        </Box>
       </Group>
 
       {/* Center section - Breadcrumb (desktop only) */}
