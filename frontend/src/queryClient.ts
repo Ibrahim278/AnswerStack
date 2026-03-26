@@ -11,10 +11,13 @@ interface ApiErrorShape {
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError: (error: Error) => {
+    onError: (error: Error, query) => {
       const apiError = (error as unknown as Record<string, unknown>).apiError as ApiErrorShape | undefined;
       if (apiError) {
+        // Use query key as notification ID to deduplicate error toasts
+        const notificationId = `query-error-${JSON.stringify(query.queryKey)}`;
         notifications.show({
+          id: notificationId,
           title: 'Error',
           message: apiError.message,
           color: 'red',

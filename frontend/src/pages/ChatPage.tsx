@@ -25,7 +25,7 @@ export default function ChatPage() {
   const isMobile = useMediaQuery('(max-width: 48em)');
 
   // Project info for heading
-  const { data: project } = useProject(projectId!);
+  const { data: project, isError: projectError, isLoading: projectLoading } = useProject(projectId!);
 
   // System status for banners (D-81, D-82, D-86)
   const { data: status } = useSystemStatus(projectId);
@@ -71,6 +71,21 @@ export default function ChatPage() {
     },
     [sendMessage, sessionId],
   );
+
+  // Project not found or invalid ID
+  if (!projectLoading && (projectError || (!project && projectId))) {
+    return (
+      <EmptyState
+        icon={<IconAlertCircle size={48} style={{ color: 'var(--mantine-color-red-6)' }} />}
+        title="Project not found"
+        description="This project does not exist or has been deleted."
+        action={{
+          label: 'Back to Projects',
+          onClick: () => { void navigate('/projects'); },
+        }}
+      />
+    );
+  }
 
   // D-83: Session not found
   if (sessionId && sessionError) {
