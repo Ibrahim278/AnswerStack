@@ -1,8 +1,25 @@
 /**
+ * Strip <think>...</think> blocks from LLM output.
+ * Some reasoning models (GLM-4, DeepSeek, etc.) wrap chain-of-thought
+ * in <think> tags that should never be shown to the user.
+ */
+export function stripThinkBlocks(text: string): string {
+  // Handle complete <think>...</think> blocks (case-insensitive, across newlines)
+  let result = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+  // Handle unclosed <think> at the end (streaming: model is still thinking)
+  result = result.replace(/<think>[\s\S]*$/gi, '');
+  // Handle stray closing tags
+  result = result.replace(/<\/think>\s*/gi, '');
+  // Handle partial opening tag at end of stream (e.g. "<thi", "<think")
+  result = result.replace(/<t(?:h(?:i(?:n(?:k)?)?)?)?$/i, '');
+  return result.trim();
+}
+
+/**
  * Strip markdown formatting and [Source N] citations for clean clipboard copy (D-46).
  */
 export function stripMarkdownAndCitations(markdown: string): string {
-  return markdown
+  return stripThinkBlocks(markdown)
     // Remove [Source N] citations
     .replace(/\[Source \d+\]/g, '')
     // Remove markdown bold/italic
@@ -34,11 +51,14 @@ export function stripMarkdownAndCitations(markdown: string): string {
  * Process [Source N] citations in text, replacing with a marker that react-markdown
  * can render as a custom link. Uses a special URL scheme: citation://N
  *
+ * Also strips <think> blocks from reasoning models.
+ *
  * Applied to full accumulated text on every render, not incrementally (Pitfall 1).
  */
 export function processCitations(text: string): string {
-  return text.replace(
+  const cleaned = stripThinkBlocks(text);
+  return cleaned.replace(
     /\[Source (\d+)\]/g,
-    '[<sup>$1</sup>](citation://$1)',
+    '[^$1^](citation://$1)',
   );
 }
