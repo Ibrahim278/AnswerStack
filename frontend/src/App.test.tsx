@@ -1,10 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { App } from './App';
 
 describe('App', () => {
-  it('renders with Mantine and QueryClient providers', () => {
+  it('renders with Mantine, QueryClient, and Router providers', async () => {
     render(<App />);
-    expect(screen.getByText(/AnswerStack/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/AnswerStack/i)).toBeInTheDocument();
+    });
   });
 });
