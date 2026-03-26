@@ -62,12 +62,13 @@ export function SourcePanel({ messages }: SourcePanelProps) {
     if (!sourcePanelOpen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.stopPropagation();
         closeSourcePanel();
         triggerRef.current?.focus();
       }
     };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
   }, [sourcePanelOpen, closeSourcePanel]);
 
   // Track which element triggered the panel open

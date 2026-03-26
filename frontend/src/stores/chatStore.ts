@@ -23,6 +23,7 @@ interface ChatState {
   stopStream: () => void;
   setStreamError: (error: SSEError) => void;
   resetStream: () => void;
+  prepareStream: () => void;
   openSourcePanel: (msgId: string) => void;
   closeSourcePanel: () => void;
   toggleSourcePanel: () => void;
@@ -79,6 +80,19 @@ export const useChatStore = create<ChatState>()((set) => ({
   resetStream: () =>
     set({
       isStreaming: false,
+      streamingMessageId: null,
+      accumulatedTokens: '',
+      currentSources: [],
+      streamPhase: 'idle',
+      streamError: null,
+    }),
+
+  // Prepare for a new stream: reset accumulated state but keep isStreaming=true
+  // to prevent the UI from flickering back to empty state between resetStream
+  // and the first SSE message_start event.
+  prepareStream: () =>
+    set({
+      isStreaming: true,
       streamingMessageId: null,
       accumulatedTokens: '',
       currentSources: [],

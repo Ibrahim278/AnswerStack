@@ -16,7 +16,14 @@ export function ChatMessageList({ messages, onRetry }: ChatMessageListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const { isStreaming, streamError, streamPhase, accumulatedTokens } = useChatStore();
+  // Use individual selectors to avoid subscribing to entire store.
+  // Subscribing to the whole store causes re-renders when unrelated state
+  // (e.g. sourcePanelOpen) changes, which can trigger "Maximum update depth
+  // exceeded" crashes from scroll handler cascades.
+  const isStreaming = useChatStore((s) => s.isStreaming);
+  const streamError = useChatStore((s) => s.streamError);
+  const streamPhase = useChatStore((s) => s.streamPhase);
+  const accumulatedTokens = useChatStore((s) => s.accumulatedTokens);
 
   // Find last assistant message index for retry button
   const lastAssistantIdx = messages.reduce(

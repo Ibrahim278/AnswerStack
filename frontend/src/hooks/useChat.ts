@@ -39,7 +39,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
     completeStream,
     stopStream,
     setStreamError,
-    resetStream,
+    prepareStream,
     isStreaming,
   } = useChatStore();
 
@@ -106,7 +106,11 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
         created_at: new Date().toISOString(),
       };
 
-      resetStream();
+      // Use prepareStream instead of resetStream to keep isStreaming=true,
+      // preventing the UI from flickering back to empty state (ChatEmptyState)
+      // before the first SSE event arrives. This avoids "Maximum update depth
+      // exceeded" crashes from rapid mount/unmount cycles.
+      prepareStream();
 
       try {
         await sseFn(`/api/v1/projects/${projectId}/chat/stream`, {
@@ -233,7 +237,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
         }
       }
     },
-    [projectId, sseFn, startStream, setStreamPhase, appendToken, setSources, completeStream, setStreamError, resetStream, onSessionCreated, updateSessionCache, startHeartbeatMonitor, stopHeartbeatMonitor],
+    [projectId, sseFn, startStream, setStreamPhase, appendToken, setSources, completeStream, setStreamError, prepareStream, onSessionCreated, updateSessionCache, startHeartbeatMonitor, stopHeartbeatMonitor],
   );
 
   // Stop generation (CHAT-05, D-49, D-60)
