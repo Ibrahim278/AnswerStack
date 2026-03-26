@@ -14,6 +14,7 @@ import { Sidebar } from './Sidebar';
 import { MobileDrawer } from './MobileDrawer';
 import { SkipToMain } from '../common/SkipToMain';
 import { ConnectionOverlay } from '../common/ConnectionOverlay';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 
 NProgress.configure({ showSpinner: false, minimum: 0.1, speed: 300 });
 
@@ -70,7 +71,9 @@ export function AppLayout() {
         </AppShell.Navbar>
 
         <AppShell.Main id="main-content">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </AppShell.Main>
       </AppShell>
 
