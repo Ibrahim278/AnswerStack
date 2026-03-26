@@ -3,6 +3,7 @@ import { Stack, Skeleton, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { useProject } from '../hooks/useProjects';
 import { useDocuments } from '../hooks/useDocuments';
+import { useSystemStatus } from '../hooks/useSystemStatus';
 import { InlineProjectName } from '../components/projects/InlineProjectName';
 import { IndexSection } from '../components/indexing/IndexSection';
 import { StaleBanner } from '../components/documents/StaleBanner';
@@ -27,6 +28,7 @@ export default function ProjectDetailPage() {
   const isMobile = useMediaQuery('(max-width: 48em)');
   const { data: project, isLoading: projectLoading, isError: projectError } = useProject(id ?? '');
   const { data: documentsData, isLoading: docsLoading } = useDocuments(id ?? '');
+  const { data: statusData } = useSystemStatus(id);
 
   if (!id) {
     return <Text>Invalid project ID</Text>;
@@ -58,6 +60,20 @@ export default function ProjectDetailPage() {
 
   return (
     <Stack gap="lg">
+      {statusData?.status === 'misconfigured' && (
+        <ErrorBanner
+          color="orange"
+          title="Provider not configured"
+          message="Set up your LLM provider to enable indexing and chat"
+          actions={[
+            {
+              label: 'Go to Settings',
+              onClick: () => void navigate('/settings'),
+            },
+          ]}
+        />
+      )}
+
       <InlineProjectName project={project} />
 
       <IndexSection projectId={id} />
