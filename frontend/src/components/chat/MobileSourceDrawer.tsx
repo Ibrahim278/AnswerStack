@@ -18,7 +18,13 @@ export function MobileSourceDrawer({ messages }: MobileSourceDrawerProps) {
   const closeSourcePanel = useChatStore((s) => s.closeSourcePanel);
 
   const activeMessage = messages.find((m) => m.id === activeSourceMsgId);
-  const sources: SSESourceItem[] = (activeMessage?.sources_json as SSESourceItem[]) ?? EMPTY_SOURCES;
+  // Handle sources_json being either an array or a JSON string from the API
+  const rawSources = activeMessage?.sources_json;
+  const sources: SSESourceItem[] = Array.isArray(rawSources)
+    ? rawSources
+    : typeof rawSources === 'string'
+      ? (JSON.parse(rawSources) as SSESourceItem[])
+      : EMPTY_SOURCES;
 
   const streamingMsgId = useChatStore((s) => s.streamingMessageId);
   const currentSources = useChatStore((s) => s.currentSources);

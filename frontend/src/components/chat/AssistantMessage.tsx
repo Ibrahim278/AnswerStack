@@ -26,7 +26,13 @@ interface AssistantMessageProps {
 function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantMessageProps) {
   const isMobile = useMediaQuery('(max-width: 48em)');
   const [hovered, setHovered] = useState(false);
-  const sources: SSESourceItem[] = (message.sources_json as SSESourceItem[]) ?? [];
+  // Handle sources_json being either an array or a JSON string from the API
+  const rawSources = message.sources_json;
+  const sources: SSESourceItem[] = Array.isArray(rawSources)
+    ? rawSources
+    : typeof rawSources === 'string'
+      ? (JSON.parse(rawSources) as SSESourceItem[])
+      : [];
   const isNoContext = sources.length === 0;
 
   // Process citations in content (D-31, Pitfall 1)
