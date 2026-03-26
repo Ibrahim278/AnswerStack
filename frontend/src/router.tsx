@@ -6,6 +6,7 @@ import { PageSkeleton } from './components/common/PageSkeleton';
 const ProjectListPage = lazy(() => import('./pages/ProjectListPage'));
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const ChatPage = lazy(() => import('./pages/ChatPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 export const router = createBrowserRouter([
@@ -34,10 +35,7 @@ export const router = createBrowserRouter([
         path: 'projects/:id/chat',
         element: (
           <Suspense fallback={<PageSkeleton type="chat" />}>
-            <div>
-              <h1>Chat</h1>
-              <p>Chat - Coming in Phase 7</p>
-            </div>
+            <ChatPage />
           </Suspense>
         ),
       },
@@ -45,10 +43,7 @@ export const router = createBrowserRouter([
         path: 'projects/:id/chat/:sessionId',
         element: (
           <Suspense fallback={<PageSkeleton type="chat" />}>
-            <div>
-              <h1>Chat Session</h1>
-              <p>Chat Session - Coming in Phase 7</p>
-            </div>
+            <ChatPage />
           </Suspense>
         ),
       },
