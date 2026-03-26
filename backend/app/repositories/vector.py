@@ -86,7 +86,7 @@ class ChromaDBVectorRepository(VectorRepository):
             self._client.delete_collection(
                 name=self._collection_name(project_id),
             )
-        except ValueError:
+        except (ValueError, chromadb.errors.NotFoundError):
             # Collection doesn't exist — idempotent delete
             pass
 

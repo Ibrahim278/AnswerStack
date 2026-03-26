@@ -92,11 +92,12 @@ export default function SettingsPage() {
   });
 
   // Populate form when settings data loads
+  // Skip overwriting provider_api_key — the server returns a masked value
+  // that would corrupt the real key if written back to the form.
   useEffect(() => {
     if (settings) {
-      form.setValues({
+      const vals = {
         provider_url: settings.provider_url,
-        provider_api_key: settings.provider_api_key,
         provider_model: settings.provider_model,
         embedding_model: settings.embedding_model,
         temperature: settings.temperature,
@@ -106,19 +107,17 @@ export default function SettingsPage() {
         top_k: settings.top_k,
         similarity_threshold: settings.similarity_threshold,
         reranker_enabled: settings.reranker_enabled,
+      };
+      // Only set API key on initial load (when form field is still at default)
+      const currentKey = form.values.provider_api_key;
+      const isInitialLoad = currentKey === '' || currentKey === initialFormValues.provider_api_key;
+      form.setValues({
+        ...vals,
+        provider_api_key: isInitialLoad ? settings.provider_api_key : currentKey,
       });
       form.resetDirty({
-        provider_url: settings.provider_url,
-        provider_api_key: settings.provider_api_key,
-        provider_model: settings.provider_model,
-        embedding_model: settings.embedding_model,
-        temperature: settings.temperature,
-        system_prompt: settings.system_prompt,
-        chunk_size: settings.chunk_size,
-        chunk_overlap: settings.chunk_overlap,
-        top_k: settings.top_k,
-        similarity_threshold: settings.similarity_threshold,
-        reranker_enabled: settings.reranker_enabled,
+        ...vals,
+        provider_api_key: isInitialLoad ? settings.provider_api_key : currentKey,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,7 +127,12 @@ export default function SettingsPage() {
     const validation = form.validate();
     if (validation.hasErrors) return;
 
-    updateSettings.mutate(form.values, {
+    // Only send API key if user actually typed a new one (not the masked value)
+    const payload = { ...form.values };
+    if (payload.provider_api_key && payload.provider_api_key.includes('...')) {
+      delete (payload as Record<string, unknown>).provider_api_key;
+    }
+    updateSettings.mutate(payload, {
       onSuccess: () => {
         notifications.show({
           title: 'Settings saved',

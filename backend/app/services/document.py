@@ -44,6 +44,8 @@ class DocumentService:
         """Upload multiple documents with validation, dedup, and background parsing."""
         uploaded_docs: list[Document] = []
         rejected_files: list[RejectedFile] = []
+        # Track files that need background parsing (document_id, storage_path)
+        _pending_parse: list[tuple[UUID, Path]] = []
 
         for file_data in files:
             original_filename = file_data.filename
@@ -140,16 +142,22 @@ class DocumentService:
             storage_path.parent.mkdir(parents=True, exist_ok=True)
             storage_path.write_bytes(content)
 
-            # Schedule background parsing
+            uploaded_docs.append(document)
+            _pending_parse.append((document.id, storage_path))
+
+        # Commit all document records to the DB so that background tasks
+        # (which open their own sessions) can see the rows.
+        await self._repo.commit()
+
+        # Schedule background parsing AFTER the commit
+        for doc_id, storage_path in _pending_parse:
             background_tasks.add_task(
                 _parse_document_background,
                 session_factory,
-                document.id,
+                doc_id,
                 storage_path,
                 self._settings,
             )
-
-            uploaded_docs.append(document)
 
         return DocumentUploadResult(
             uploaded=[DocumentResponse.model_validate(d) for d in uploaded_docs],

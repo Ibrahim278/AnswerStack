@@ -12,6 +12,11 @@ from app.schemas.pagination import decode_cursor
 
 class DocumentRepository(Repository[Document]):
     @abstractmethod
+    async def commit(self) -> None:
+        """Explicitly commit the current session."""
+        ...
+
+    @abstractmethod
     async def list_by_project(
         self, project_id: UUID, cursor: str | None, limit: int
     ) -> list[Document]: ...
@@ -42,6 +47,14 @@ class DocumentRepository(Repository[Document]):
 class SQLAlchemyDocumentRepository(DocumentRepository):
     def __init__(self, session: AsyncSession):
         self._session = session
+
+    async def commit(self) -> None:
+        """Explicitly commit the underlying session.
+
+        Useful when downstream background tasks need rows to be visible
+        in their own (separate) sessions before this request finishes.
+        """
+        await self._session.commit()
 
     async def get_by_id(self, id: UUID) -> Document | None:
         result = await self._session.execute(

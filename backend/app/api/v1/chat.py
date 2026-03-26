@@ -280,7 +280,7 @@ async def stream_chat(
                         "document_name": c.document_name,
                         "chunk_text": c.chunk_text[:500],
                         "page_number": c.page_number,
-                        "relevance_score": round(c.relevance_score, 4),
+                        "relevance_score": round(float(c.relevance_score), 4),
                     }
                     for c in chunks
                 ]

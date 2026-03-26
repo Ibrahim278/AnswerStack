@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { Select, Group, ActionIcon, Text } from '@mantine/core';
-import { IconRefresh } from '@tabler/icons-react';
+import { Combobox, Group, ActionIcon, Text, TextInput, useCombobox, ScrollArea } from '@mantine/core';
+import { IconRefresh, IconChevronDown } from '@tabler/icons-react';
 import { useProviderModels } from '../../hooks/useProvider';
 
 interface ModelSelectorProps {
@@ -12,43 +12,69 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ label, value, onChange, error }: ModelSelectorProps) {
   const { data, isFetching, isError, error: fetchError, refetch } = useProviderModels();
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
 
-  const selectData = useMemo(() => {
-    if (!data?.models || data.models.length === 0) {
-      // When models not yet fetched, show current value as only option
-      return value ? [{ value, label: value }] : [];
-    }
+  const models = useMemo(() => {
+    if (!data?.models || data.models.length === 0) return [];
+    return data.models.map((m) => m.id);
+  }, [data]);
 
-    // Check if there are multiple owners for grouping
-    const owners = new Set(data.models.map((m) => m.owned_by));
-    if (owners.size > 1) {
-      return data.models.map((m) => ({
-        value: m.id,
-        label: m.id,
-        group: m.owned_by,
-      }));
-    }
-
-    return data.models.map((m) => ({
-      value: m.id,
-      label: m.id,
-    }));
-  }, [data, value]);
+  // Filter models based on current input
+  const filtered = useMemo(() => {
+    if (!value) return models;
+    const lower = value.toLowerCase();
+    return models.filter((m) => m.toLowerCase().includes(lower));
+  }, [models, value]);
 
   return (
     <div>
       <Group gap="xs" align="flex-end">
-        <Select
-          label={label}
-          value={value}
-          onChange={(val) => onChange(val ?? '')}
-          data={selectData}
-          placeholder={data?.models ? 'Select a model' : 'Click refresh to load models'}
-          error={error}
-          searchable
-          style={{ flex: 1 }}
-          disabled={isFetching}
-        />
+        <Combobox
+          store={combobox}
+          onOptionSubmit={(val) => {
+            onChange(val);
+            combobox.closeDropdown();
+          }}
+        >
+          <Combobox.Target>
+            <TextInput
+              label={label}
+              value={value}
+              onChange={(e) => {
+                onChange(e.currentTarget.value);
+                combobox.openDropdown();
+                combobox.updateSelectedOptionIndex();
+              }}
+              onClick={() => combobox.openDropdown()}
+              onFocus={() => combobox.openDropdown()}
+              onBlur={() => combobox.closeDropdown()}
+              placeholder="Type a model name or select from list"
+              error={error}
+              style={{ flex: 1 }}
+              disabled={isFetching}
+              rightSection={<IconChevronDown size={14} style={{ opacity: 0.5 }} />}
+            />
+          </Combobox.Target>
+          <Combobox.Dropdown>
+            <Combobox.Options>
+              <ScrollArea.Autosize mah={200}>
+                {filtered.length > 0 ? (
+                  filtered.map((m) => (
+                    <Combobox.Option key={m} value={m}>
+                      {m}
+                    </Combobox.Option>
+                  ))
+                ) : (
+                  <Combobox.Empty>
+                    {models.length === 0 ? 'Click refresh to load models' : 'No matching models'}
+                  </Combobox.Empty>
+                )}
+              </ScrollArea.Autosize>
+            </Combobox.Options>
+          </Combobox.Dropdown>
+        </Combobox>
         <ActionIcon
           variant="light"
           size="lg"

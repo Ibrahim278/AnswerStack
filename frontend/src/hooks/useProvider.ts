@@ -6,7 +6,7 @@ export function useProviderModels() {
   return useQuery({
     queryKey: queryKeys.provider.models,
     queryFn: () => providerApi.listModels(),
-    enabled: false, // Only fetch when explicitly called via refetch
+    staleTime: 5 * 60 * 1000, // Cache models for 5 minutes
   });
 }
 
