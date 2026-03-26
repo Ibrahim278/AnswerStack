@@ -1,13 +1,14 @@
 import { useEffect, useCallback } from 'react';
-import { Title, Stack, Group, Button, Skeleton } from '@mantine/core';
+import { Stack, Group, Button, Skeleton, Paper, Text } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconDeviceFloppy, IconRestore } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconRestore, IconShieldCheck, IconAdjustments } from '@tabler/icons-react';
 import { useSettings, useUpdateSettings, useResetSettings } from '../hooks/useSettings';
 import { BasicSettingsSection } from '../components/settings/BasicSettingsSection';
 import { AdvancedSettingsSection } from '../components/settings/AdvancedSettingsSection';
 import { ConfirmModal } from '../components/common/ConfirmModal';
+import { PageIntro } from '../components/common/PageIntro';
 import type { SettingsResponse } from '../types';
 
 type SettingsFormValues = Omit<SettingsResponse, 'id' | 'provider_capabilities' | 'updated_at'>;
@@ -175,7 +176,11 @@ export default function SettingsPage() {
   if (isLoading) {
     return (
       <Stack gap="lg">
-        <Title order={1}>Settings</Title>
+        <PageIntro
+          eyebrow="Configuration"
+          title="Settings"
+          description="Configure your provider, retrieval defaults, and response behavior."
+        />
         <SettingsPageSkeleton />
       </Stack>
     );
@@ -183,30 +188,56 @@ export default function SettingsPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={1}>Settings</Title>
+      <PageIntro
+        eyebrow="Configuration"
+        title="Settings"
+        description="Tune the provider connection and retrieval defaults without losing sight of what each control affects."
+        meta={(
+          <>
+            <span className="page-pill">
+              <IconShieldCheck size={16} />
+              Provider and API controls
+            </span>
+            <span className="page-pill">
+              <IconAdjustments size={16} />
+              Retrieval quality tuning
+            </span>
+          </>
+        )}
+      />
 
       <BasicSettingsSection form={form} />
 
       <AdvancedSettingsSection form={form} />
 
-      <Group justify="space-between">
-        <Button
-          variant="subtle"
-          color="red"
-          leftSection={<IconRestore size={16} />}
-          onClick={resetHandlers.open}
-        >
-          Reset to Defaults
-        </Button>
-        <Button
-          leftSection={<IconDeviceFloppy size={16} />}
-          loading={updateSettings.isPending}
-          disabled={!form.isDirty()}
-          onClick={handleSave}
-        >
-          Save Settings
-        </Button>
-      </Group>
+      <Paper className="surface-card settings-actions" withBorder radius="xl">
+        <Group justify="space-between" align="center">
+          <div>
+            <Text fw={600}>Review before saving</Text>
+            <Text size="sm" c="dimmed">
+              Unsaved changes stay local until you commit them.
+            </Text>
+          </div>
+          <Group>
+            <Button
+              variant="subtle"
+              color="red"
+              leftSection={<IconRestore size={16} />}
+              onClick={resetHandlers.open}
+            >
+              Reset to Defaults
+            </Button>
+            <Button
+              leftSection={<IconDeviceFloppy size={16} />}
+              loading={updateSettings.isPending}
+              disabled={!form.isDirty()}
+              onClick={handleSave}
+            >
+              Save Settings
+            </Button>
+          </Group>
+        </Group>
+      </Paper>
 
       <ConfirmModal
         opened={resetOpened}

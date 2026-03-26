@@ -65,8 +65,9 @@ export function StatusBadge() {
       <Popover.Target>
         <Badge
           color={color}
-          variant="dot"
-          size="sm"
+          variant="light"
+          size="lg"
+          radius="xl"
           style={{
             cursor: 'pointer',
             ...(isIndexing

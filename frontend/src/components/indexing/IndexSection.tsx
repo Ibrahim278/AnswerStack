@@ -49,7 +49,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
 
   if (isLoading || !status) {
     return (
-      <Paper withBorder p="md" radius="md">
+      <Paper withBorder p="lg" radius="xl" className="surface-card">
         <Text size="sm" c="dimmed">Loading index status...</Text>
       </Paper>
     );
@@ -63,7 +63,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   if (job && (job.status === 'running' || job.status === 'pending')) {
     const percentage = Math.round(job.percentage);
     return (
-      <Paper withBorder p="md" radius="md">
+      <Paper withBorder p="lg" radius="xl" className="surface-card">
         <Stack gap="sm">
           <Group justify="space-between" align="center">
             <div>
@@ -94,7 +94,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   // Failed state
   if (indexStatus === 'failed' || (job && job.status === 'failed')) {
     return (
-      <Paper withBorder p="md" radius="md">
+      <Paper withBorder p="lg" radius="xl" className="surface-card">
         <Stack gap="sm">
           <ErrorBanner
             title="Indexing failed"
@@ -115,7 +115,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   // Cancelled state
   if (job && job.status === 'cancelled') {
     return (
-      <Paper withBorder p="md" radius="md">
+      <Paper withBorder p="lg" radius="xl" className="surface-card">
         <Group justify="space-between" align="center">
           <Text size="sm" c="dimmed">
             Indexing was cancelled
@@ -137,10 +137,10 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   // Stale state
   if (indexStatus === 'stale') {
     return (
-      <Paper withBorder p="md" radius="md">
+      <Paper withBorder p="lg" radius="xl" className="surface-card">
         <Group justify="space-between" align="center">
           <div>
-            <Text size="sm" fw={700} c="orange">
+            <Text size="sm" fw={700} c="orange.8">
               Index is out of date
             </Text>
             {lastIndexed && (
@@ -167,10 +167,10 @@ export function IndexSection({ projectId }: IndexSectionProps) {
   // Indexed (up to date) state
   if (indexStatus === 'indexed') {
     return (
-      <Paper withBorder p="md" radius="md">
+      <Paper withBorder p="lg" radius="xl" className="surface-card">
         <Group justify="space-between" align="center">
           <div>
-            <Text size="sm" fw={700} c="green">
+            <Text size="sm" fw={700} c="ocean.8">
               Index up to date
             </Text>
             {lastIndexed && (
@@ -195,7 +195,7 @@ export function IndexSection({ projectId }: IndexSectionProps) {
 
   // Not indexed (default) state
   return (
-    <Paper withBorder p="md" radius="md">
+    <Paper withBorder p="lg" radius="xl" className="surface-card">
       <Group justify="space-between" align="center">
         <Text size="sm" c="dimmed">
           No index built

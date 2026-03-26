@@ -22,7 +22,9 @@ export function AppLayout() {
   const location = useLocation();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure(false);
-  const { showOverlay, refetch } = useSystemStatus();
+  const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
+  const activeProjectId = projectMatch?.[1];
+  const { showOverlay, refetch } = useSystemStatus(activeProjectId, { notifyTransitions: true });
   const isFetching = useIsFetching();
 
   // NProgress integration - track TanStack Query fetching state
@@ -38,12 +40,15 @@ export function AppLayout() {
 
   // Focus management: move focus to h1 after route change (D-27)
   useEffect(() => {
+    if (!/jsdom/i.test(window.navigator.userAgent)) {
+      window.scrollTo({ top: 0, left: 0 });
+    }
     // Small delay to ensure the page component has rendered its h1
     const timer = setTimeout(() => {
       const heading = document.querySelector('main h1') as HTMLElement | null;
       if (heading) {
         heading.tabIndex = -1;
-        heading.focus();
+        heading.focus({ preventScroll: true });
       }
     }, 100);
 
@@ -54,8 +59,9 @@ export function AppLayout() {
     <>
       <SkipToMain />
       <AppShell
+        className="app-shell"
         padding="md"
-        header={{ height: 60 }}
+        header={{ height: 72 }}
         navbar={{
           width: sidebarCollapsed ? 60 : 280,
           breakpoint: 'sm',
@@ -70,9 +76,11 @@ export function AppLayout() {
           <Sidebar />
         </AppShell.Navbar>
 
-        <AppShell.Main id="main-content">
+        <AppShell.Main id="main-content" className="app-main">
           <ErrorBoundary>
-            <Outlet />
+            <div className="page-shell">
+              <Outlet />
+            </div>
           </ErrorBoundary>
         </AppShell.Main>
       </AppShell>

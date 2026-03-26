@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, Group, Text, CloseButton } from '@mantine/core';
 import { useChatStore } from '../../stores/chatStore';
 import type { SSESourceItem, ChatMessageResponse } from '../../types';
+import { parseSources } from '../../utils/chatSources';
 import { SourceCard } from './SourceCard';
 import { SourcePanelEmpty } from './SourcePanelEmpty';
 
@@ -23,13 +24,7 @@ export function SourcePanel({ messages }: SourcePanelProps) {
 
   // Find sources for active message
   const activeMessage = messages.find((m) => m.id === activeSourceMsgId);
-  // Handle sources_json being either an array or a JSON string from the API
-  const rawSources = activeMessage?.sources_json;
-  const sources: SSESourceItem[] = Array.isArray(rawSources)
-    ? rawSources
-    : typeof rawSources === 'string'
-      ? (JSON.parse(rawSources) as SSESourceItem[])
-      : EMPTY_SOURCES;
+  const sources = activeMessage ? parseSources(activeMessage.sources_json) : EMPTY_SOURCES;
 
   // Also check streaming state for sources (active or just-completed stream)
   const streamingMsgId = useChatStore((s) => s.streamingMessageId);
@@ -87,18 +82,11 @@ export function SourcePanel({ messages }: SourcePanelProps) {
       role="complementary"
       aria-label="Source evidence"
       tabIndex={0}
-      style={{
-        width: '380px',
-        minWidth: '380px',
-        overflow: 'hidden',
-        borderLeft: '1px solid var(--mantine-color-default-border)',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
+      className="source-panel chat-surface"
+      style={{ display: 'flex', flexDirection: 'column' }}
     >
       {/* Header (D-23) */}
-      <Group justify="space-between" p="md" style={{ borderBottom: '1px solid var(--mantine-color-default-border)', flexShrink: 0 }}>
+      <Group justify="space-between" className="source-panel__header" style={{ flexShrink: 0 }}>
         <Text fw={700} size="lg" component="h2">
           Sources ({displaySources.length})
         </Text>
@@ -106,25 +94,19 @@ export function SourcePanel({ messages }: SourcePanelProps) {
       </Group>
 
       {/* Source cards or empty state (D-29: independent scroll) */}
-      <div
-        ref={scrollContainerRef}
-        style={{ flex: 1, overflowY: 'auto', padding: 'var(--mantine-spacing-md)' }}
-      >
+      <div ref={scrollContainerRef} className="source-panel__body">
         {displaySources.length === 0 ? (
           <SourcePanelEmpty />
         ) : (
           <Box style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {displaySources
-              .slice()
-              .sort((a, b) => b.relevance_score - a.relevance_score)
-              .map((source, idx) => (
-                <SourceCard
-                  key={`${activeSourceMsgId}-${idx}`}
-                  source={source}
-                  index={idx}
-                  highlighted={highlightedSource === idx + 1}
-                />
-              ))}
+            {displaySources.map((source, idx) => (
+              <SourceCard
+                key={`${activeSourceMsgId}-${idx}`}
+                source={source}
+                index={idx}
+                highlighted={highlightedSource === idx + 1}
+              />
+            ))}
           </Box>
         )}
       </div>

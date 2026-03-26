@@ -210,6 +210,29 @@ async def test_reset_settings_restores_defaults(async_client):
     assert reset_data["reranker_enabled"] == original_data["reranker_enabled"]
 
 
+async def test_clearing_provider_url_disables_provider(async_client_with_provider):
+    """Clearing provider_url should disable live provider access immediately."""
+    update_response = await async_client_with_provider.put(
+        "/api/v1/settings",
+        json={"provider_url": ""},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["provider_url"] == ""
+
+    models_response = await async_client_with_provider.get("/api/v1/provider/models")
+    assert models_response.status_code == 503
+
+
+async def test_reset_settings_disables_provider_when_defaults_are_empty(async_client_with_provider):
+    """Reset should close the live provider client when defaults clear the URL."""
+    reset_response = await async_client_with_provider.put("/api/v1/settings/reset")
+    assert reset_response.status_code == 200
+    assert reset_response.json()["provider_url"] == ""
+
+    models_response = await async_client_with_provider.get("/api/v1/provider/models")
+    assert models_response.status_code == 503
+
+
 # --- SET-01 continued: Partial update and empty update ---
 
 

@@ -1,25 +1,35 @@
 import { useMemo } from 'react';
-import { Combobox, Group, ActionIcon, Text, TextInput, useCombobox, ScrollArea } from '@mantine/core';
+import { Combobox, Group, ActionIcon, TextInput, useCombobox, ScrollArea } from '@mantine/core';
 import { IconRefresh, IconChevronDown } from '@tabler/icons-react';
-import { useProviderModels } from '../../hooks/useProvider';
+import type { ModelListResponse } from '../../types';
 
 interface ModelSelectorProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  modelsData?: ModelListResponse;
+  isFetching?: boolean;
   error?: string;
+  onRefresh: () => void;
 }
 
-export function ModelSelector({ label, value, onChange, error }: ModelSelectorProps) {
-  const { data, isFetching, isError, error: fetchError, refetch } = useProviderModels();
+export function ModelSelector({
+  label,
+  value,
+  onChange,
+  modelsData,
+  isFetching = false,
+  error,
+  onRefresh,
+}: ModelSelectorProps) {
   const combobox = useCombobox({
     onDropdownClose: () => combobox.resetSelectedOption(),
   });
 
   const models = useMemo(() => {
-    if (!data?.models || data.models.length === 0) return [];
-    return data.models.map((m) => m.id);
-  }, [data]);
+    if (!modelsData?.models || modelsData.models.length === 0) return [];
+    return modelsData.models.map((m) => m.id);
+  }, [modelsData]);
 
   // Filter models based on current input
   const filtered = useMemo(() => {
@@ -78,7 +88,7 @@ export function ModelSelector({ label, value, onChange, error }: ModelSelectorPr
         <ActionIcon
           variant="light"
           size="lg"
-          onClick={() => void refetch()}
+          onClick={onRefresh}
           loading={isFetching}
           aria-label={`Refresh ${label} list`}
           mb={error ? 22 : 0}
@@ -86,16 +96,6 @@ export function ModelSelector({ label, value, onChange, error }: ModelSelectorPr
           <IconRefresh size={16} />
         </ActionIcon>
       </Group>
-      {isError && fetchError && (
-        <Text size="xs" c="red" mt={4}>
-          Failed to load models: {fetchError instanceof Error ? fetchError.message : 'Unknown error'}
-        </Text>
-      )}
-      {data?.warning && (
-        <Text size="xs" c="dimmed" mt={4}>
-          {data.warning}
-        </Text>
-      )}
     </div>
   );
 }

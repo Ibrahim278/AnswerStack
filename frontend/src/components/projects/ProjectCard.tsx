@@ -1,4 +1,5 @@
-import { Card, Title, Text, Group, Badge, Box } from '@mantine/core';
+import { Card, Title, Text, Group, Badge, Box, Stack, ThemeIcon } from '@mantine/core';
+import { IconFolderCode, IconArrowUpRight } from '@tabler/icons-react';
 import { useNavigate } from 'react-router';
 import type { ProjectResponse } from '../../types';
 import { ProjectCardMenu } from './ProjectCardMenu';
@@ -61,11 +62,11 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 
   return (
     <Card
-      shadow="sm"
+      className="project-card surface-card"
       padding="lg"
-      radius="md"
+      radius="xl"
       withBorder
-      style={{ cursor: 'pointer', position: 'relative' }}
+      style={{ position: 'relative' }}
       onClick={() => void navigate(`/projects/${project.id}`)}
     >
       <Box style={{ position: 'absolute', top: 12, right: 12 }}>
@@ -76,33 +77,45 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
         />
       </Box>
 
-      <Title order={4} mb="xs" pr={30}>
-        {project.name}
-      </Title>
+      <Stack gap="md" h="100%">
+        <Group justify="space-between" align="flex-start" pr={34}>
+          <Group gap="sm" wrap="nowrap" align="flex-start">
+            <ThemeIcon
+              variant="light"
+              color="ocean"
+              radius="xl"
+              size="xl"
+            >
+              <IconFolderCode size={18} stroke={1.8} />
+            </ThemeIcon>
+            <div>
+              <Title order={4} mb={4}>
+                {project.name}
+              </Title>
+              <Text size="xs" c="dimmed">
+                Last active {formatRelativeTime(project.last_used_at ?? project.updated_at)}
+              </Text>
+            </div>
+          </Group>
 
-      {project.description && (
-        <Text
-          size="sm"
-          c="dimmed"
-          mb="md"
-          lineClamp={2}
-        >
-          {project.description}
-        </Text>
-      )}
+          <ThemeIcon variant="subtle" color="gray" radius="xl" size="lg">
+            <IconArrowUpRight size={16} stroke={1.8} />
+          </ThemeIcon>
+        </Group>
 
-      <Group justify="space-between" mt="auto">
-        <Text size="xs" c="dimmed">
-          {formatRelativeTime(project.last_used_at ?? project.updated_at)}
+        <Text size="sm" c="dimmed" lineClamp={3}>
+          {project.description || 'Organize documents, build an index, and ask evidence-backed questions from one workspace.'}
         </Text>
-        <Badge
-          variant="dot"
-          color={getStatusColor(project.index_status)}
-          size="sm"
-        >
-          {getStatusLabel(project.index_status)}
-        </Badge>
-      </Group>
+
+        <Group justify="space-between" mt="auto">
+          <Badge variant="light" color={getStatusColor(project.index_status)} size="lg">
+            {getStatusLabel(project.index_status)}
+          </Badge>
+          <Text size="xs" c="dimmed">
+            Open workspace
+          </Text>
+        </Group>
+      </Stack>
     </Card>
   );
 }

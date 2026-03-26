@@ -51,6 +51,8 @@ class SettingsUpdate(BaseModel):
     def validate_provider_url(cls, v: str | None) -> str | None:
         if v is None:
             return v
+        if v.strip() == "":
+            return ""
         parsed = urlparse(v)
         if parsed.scheme not in ("http", "https"):
             raise ValueError("provider_url must use http:// or https:// scheme")

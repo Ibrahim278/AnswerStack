@@ -4,9 +4,12 @@ import { useMediaQuery } from '@mantine/hooks';
 import { IconInfoCircle } from '@tabler/icons-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeKatex from 'rehype-katex';
 import type { ChatMessageResponse, SSESourceItem } from '../../types';
 import { processCitations } from '../../utils/markdown';
+import { parseSources } from '../../utils/chatSources';
 import { CitationLink } from './CitationLink';
 import { CodeBlockCopy } from './CodeBlockCopy';
 import { SourceBadge } from './SourceBadge';
@@ -26,13 +29,7 @@ interface AssistantMessageProps {
 function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantMessageProps) {
   const isMobile = useMediaQuery('(max-width: 48em)');
   const [hovered, setHovered] = useState(false);
-  // Handle sources_json being either an array or a JSON string from the API
-  const rawSources = message.sources_json;
-  const sources: SSESourceItem[] = Array.isArray(rawSources)
-    ? rawSources
-    : typeof rawSources === 'string'
-      ? (JSON.parse(rawSources) as SSESourceItem[])
-      : [];
+  const sources: SSESourceItem[] = parseSources(message.sources_json);
   const isNoContext = sources.length === 0;
 
   // Process citations in content (D-31, Pitfall 1)
@@ -92,8 +89,8 @@ function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantM
 
         {/* Markdown content (D-32, D-44) */}
         <Markdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeHighlight]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeHighlight, rehypeKatex]}
           components={components}
         >
           {processedContent}

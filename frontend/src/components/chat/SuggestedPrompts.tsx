@@ -39,16 +39,21 @@ export function SuggestedPrompts({ dynamicPrompts, isLoading, onSelect }: Sugges
         {prompts.map((prompt) => (
           <Button
             key={prompt}
-            variant="light"
-            color="gray"
-            size="sm"
+            variant="white"
+            color="dark"
+            size="md"
+            radius="xl"
             onClick={() => onSelect(prompt)}
             styles={{
               root: {
                 whiteSpace: 'normal',
                 height: 'auto',
-                padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
+                minHeight: '84px',
+                padding: 'var(--mantine-spacing-md)',
                 textAlign: 'left',
+                justifyContent: 'flex-start',
+                border: '1px solid rgba(32, 59, 48, 0.1)',
+                boxShadow: '0 12px 28px rgba(38, 55, 47, 0.06)',
               },
               label: {
                 whiteSpace: 'normal',

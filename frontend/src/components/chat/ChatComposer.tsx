@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Textarea, ActionIcon, Group, Box } from '@mantine/core';
+import { Textarea, ActionIcon, Group, Box, Text } from '@mantine/core';
 import { IconSend, IconPlayerStop } from '@tabler/icons-react';
 
 interface ChatComposerProps {
@@ -47,15 +47,7 @@ export function ChatComposer({ onSend, onStop, isStreaming, disabled = false }: 
   }, [value]);
 
   return (
-    <Box
-      style={{
-        position: 'sticky',
-        bottom: 0,
-        padding: 'var(--mantine-spacing-md)',
-        backgroundColor: 'var(--mantine-color-body)',
-        borderTop: '1px solid var(--mantine-color-default-border)',
-      }}
-    >
+    <Box className="chat-composer-shell">
       <Group gap="sm" align="flex-end" wrap="nowrap">
         <Textarea
           ref={textareaRef}
@@ -66,33 +58,52 @@ export function ChatComposer({ onSend, onStop, isStreaming, disabled = false }: 
           disabled={disabled}
           autosize
           minRows={1}
-          maxRows={5}
+          maxRows={7}
           style={{ flex: 1 }}
           aria-label="Ask a question"
           aria-describedby={disabled ? 'composer-disabled-reason' : undefined}
+          radius="xl"
+          styles={{
+            input: {
+              background: 'rgba(255,255,255,0.92)',
+              borderColor: 'rgba(32, 59, 48, 0.14)',
+              paddingTop: '14px',
+              paddingBottom: '14px',
+            },
+          }}
         />
         {isStreaming ? (
           <ActionIcon
-            size="lg"
+            size="xl"
             color="red"
             variant="filled"
             onClick={onStop}
             aria-label="Stop generation"
+            radius="xl"
           >
             <IconPlayerStop size={20} />
           </ActionIcon>
         ) : (
           <ActionIcon
-            size="lg"
-            color="blue"
+            size="xl"
+            color="ocean"
             variant="filled"
             onClick={handleSend}
             disabled={!canSend}
             aria-label="Send message"
+            radius="xl"
           >
             <IconSend size={20} />
           </ActionIcon>
         )}
+      </Group>
+      <Group justify="space-between" mt="xs" px={4} className="chat-composer-meta">
+        <Text className="chat-composer-hint">
+          `Enter` sends, `Shift+Enter` adds a new line.
+        </Text>
+        <Text className="chat-composer-hint">
+          Press `/` to focus the composer.
+        </Text>
       </Group>
     </Box>
   );

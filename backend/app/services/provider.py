@@ -35,10 +35,14 @@ class ProviderService:
         logger.info("Provider configured", base_url=base_url)
 
     async def close(self) -> None:
-        """Close the underlying HTTP client. Call during app shutdown."""
+        """Close the underlying HTTP client and clear provider state."""
         if self._client is not None:
             await self._client.close()
-            self._client = None
+        self._client = None
+        self._current_base_url = None
+        self._current_api_key = None
+        self._models_cache = None
+        self._models_cache_time = 0
 
     @property
     def is_configured(self) -> bool:

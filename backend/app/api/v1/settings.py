@@ -44,11 +44,14 @@ async def update_settings(
     # If provider config changed, reconfigure the provider client
     if "provider_url" in updates or "provider_api_key" in updates:
         provider_service = getattr(request.app.state, "provider_service", None)
-        if provider_service is not None and settings.provider_url and settings.provider_url.strip():
-            await provider_service.configure(
-                base_url=settings.provider_url,
-                api_key=settings.provider_api_key,
-            )
+        if provider_service is not None:
+            if settings.provider_url and settings.provider_url.strip():
+                await provider_service.configure(
+                    base_url=settings.provider_url,
+                    api_key=settings.provider_api_key,
+                )
+            else:
+                await provider_service.close()
 
     # If indexing params changed, mark indexed documents as stale
     await mark_documents_stale_after_settings_change(
@@ -74,10 +77,13 @@ async def reset_settings(
 
     # Reconfigure provider with reset defaults (only if URL is set)
     provider_service = getattr(request.app.state, "provider_service", None)
-    if provider_service is not None and settings.provider_url and settings.provider_url.strip():
-        await provider_service.configure(
-            base_url=settings.provider_url,
-            api_key=settings.provider_api_key,
-        )
+    if provider_service is not None:
+        if settings.provider_url and settings.provider_url.strip():
+            await provider_service.configure(
+                base_url=settings.provider_url,
+                api_key=settings.provider_api_key,
+            )
+        else:
+            await provider_service.close()
 
     return SettingsResponse.model_validate(settings)

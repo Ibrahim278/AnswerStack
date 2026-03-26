@@ -70,10 +70,11 @@ export function ChatMessageList({ messages, onRetry }: ChatMessageListProps) {
         h="100%"
         viewportRef={viewportRef}
         onScrollPositionChange={handleScroll}
+        className="chat-message-scroll"
       >
         <Stack
           gap="md"
-          p="lg"
+          p="xl"
           role="log"
           aria-label="Chat messages"
           style={{ maxWidth: '100%' }}

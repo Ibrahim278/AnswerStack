@@ -1,6 +1,8 @@
 import { memo } from 'react';
 import { Box } from '@mantine/core';
 import Markdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import type { ChatMessageResponse } from '../../types';
 
 interface UserMessageProps {
@@ -28,7 +30,9 @@ function UserMessageInner({ message }: UserMessageProps) {
           lineHeight: 1.6,
         }}
       >
-        <Markdown>{message.content}</Markdown>
+        <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+          {message.content}
+        </Markdown>
       </Box>
     </Box>
   );

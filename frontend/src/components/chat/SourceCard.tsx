@@ -42,6 +42,7 @@ export function SourceCard({ source, index, highlighted }: SourceCardProps) {
       ref={cardRef}
       shadow="sm"
       p="sm"
+      className="source-card"
       data-source-index={index + 1}
       style={{
         borderLeft: highlightActive ? '3px solid var(--mantine-color-blue-6)' : '3px solid transparent',
@@ -56,17 +57,6 @@ export function SourceCard({ source, index, highlighted }: SourceCardProps) {
         if (e.key === 'Enter') setExpanded(!expanded);
       }}
       onClick={() => setExpanded(!expanded)}
-      styles={{
-        root: {
-          '&:hover': {
-            boxShadow: 'var(--mantine-shadow-md)',
-          },
-          '&:focus-visible': {
-            outline: '2px solid var(--mantine-color-blue-6)',
-            outlineOffset: '2px',
-          },
-        },
-      }}
     >
       {/* Header: Source number + document name + relevance badge */}
       <Group justify="space-between" mb="xs" wrap="nowrap">

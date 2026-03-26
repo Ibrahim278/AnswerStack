@@ -1,6 +1,7 @@
 import { Drawer, Text, Box, ScrollArea } from '@mantine/core';
 import { useChatStore } from '../../stores/chatStore';
 import type { SSESourceItem, ChatMessageResponse } from '../../types';
+import { parseSources } from '../../utils/chatSources';
 import { SourceCard } from './SourceCard';
 import { SourcePanelEmpty } from './SourcePanelEmpty';
 
@@ -18,13 +19,7 @@ export function MobileSourceDrawer({ messages }: MobileSourceDrawerProps) {
   const closeSourcePanel = useChatStore((s) => s.closeSourcePanel);
 
   const activeMessage = messages.find((m) => m.id === activeSourceMsgId);
-  // Handle sources_json being either an array or a JSON string from the API
-  const rawSources = activeMessage?.sources_json;
-  const sources: SSESourceItem[] = Array.isArray(rawSources)
-    ? rawSources
-    : typeof rawSources === 'string'
-      ? (JSON.parse(rawSources) as SSESourceItem[])
-      : EMPTY_SOURCES;
+  const sources = activeMessage ? parseSources(activeMessage.sources_json) : EMPTY_SOURCES;
 
   const streamingMsgId = useChatStore((s) => s.streamingMessageId);
   const currentSources = useChatStore((s) => s.currentSources);
@@ -37,6 +32,7 @@ export function MobileSourceDrawer({ messages }: MobileSourceDrawerProps) {
       onClose={closeSourcePanel}
       position="bottom"
       size="70%"
+      radius="24px 24px 0 0"
       title={
         <Text fw={700} size="lg">Sources ({displaySources.length})</Text>
       }

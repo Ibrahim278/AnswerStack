@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Title, TextInput, Group, ActionIcon, Loader } from '@mantine/core';
+import { Title, TextInput, Group, ActionIcon, Loader, Stack, Text } from '@mantine/core';
 import { IconPencil } from '@tabler/icons-react';
 import { useUpdateProject } from '../../hooks/useProjects';
 import type { ProjectResponse } from '../../types';
@@ -78,18 +78,18 @@ export function InlineProjectName({ project }: InlineProjectNameProps) {
   }
 
   return (
-    <Group
-      gap="xs"
-      align="center"
-      style={{ cursor: 'pointer' }}
-      onClick={() => setEditing(true)}
-    >
-      <Title order={1}>{project.name}</Title>
+    <Group gap="xs" align="center" style={{ cursor: 'pointer' }} onClick={() => setEditing(true)}>
+      <Stack gap={2}>
+        <Title order={1}>{project.name}</Title>
+        <Text size="sm" className="muted-copy">
+          Rename the workspace inline without leaving the page.
+        </Text>
+      </Stack>
       <ActionIcon
-        variant="subtle"
-        color="gray"
-        size="sm"
-        opacity={0.5}
+        variant="light"
+        color="ocean"
+        size="md"
+        radius="xl"
         aria-label="Edit project name"
       >
         <IconPencil size={16} />

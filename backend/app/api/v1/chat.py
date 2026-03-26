@@ -1,5 +1,6 @@
 """Chat API endpoints: session CRUD and SSE streaming."""
 
+import inspect
 import json
 import uuid
 from uuid import UUID
@@ -207,6 +208,9 @@ async def stream_chat(
                     reranker_enabled=settings.reranker_enabled,
                 )
 
+                if await request.is_disconnected():
+                    return
+
                 # No-context handling (CHAT-08)
                 if not chunks:
                     # retrieval_start already emitted above; emit sources
@@ -291,6 +295,9 @@ async def stream_chat(
                     "data": json.dumps(sources_payload),
                 }
 
+                if await request.is_disconnected():
+                    return
+
                 # Stream LLM response
                 client = provider_service._client
                 stream = await client.chat.completions.create(
@@ -303,6 +310,13 @@ async def stream_chat(
                 full_response = ""
                 token_count = 0
                 async for chunk in stream:
+                    if await request.is_disconnected():
+                        close_stream = getattr(stream, "close", None)
+                        if close_stream is not None:
+                            close_result = close_stream()
+                            if inspect.isawaitable(close_result):
+                                await close_result
+                        return
                     if (
                         chunk.choices
                         and chunk.choices[0].delta.content is not None

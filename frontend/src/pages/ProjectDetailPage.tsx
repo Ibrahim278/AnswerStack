@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from 'react-router';
-import { Stack, Skeleton, Text } from '@mantine/core';
+import { Stack, Skeleton, Text, Button, Group, Box } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
+import { IconMessageCircle } from '@tabler/icons-react';
 import { useProject } from '../hooks/useProjects';
 import { useDocuments } from '../hooks/useDocuments';
 import { useSystemStatus } from '../hooks/useSystemStatus';
@@ -74,7 +75,27 @@ export default function ProjectDetailPage() {
         />
       )}
 
-      <InlineProjectName project={project} />
+      <Box className="surface-card" p="lg">
+        <Stack gap="md">
+          <Group justify="space-between" align="flex-start">
+            <InlineProjectName project={project} />
+            <Button
+              leftSection={<IconMessageCircle size={16} />}
+              onClick={() => { void navigate(`/projects/${id}/chat`); }}
+            >
+              Open Chat
+            </Button>
+          </Group>
+          <Group gap="sm">
+            <span className="page-pill">
+              {documents.length} {documents.length === 1 ? 'document' : 'documents'}
+            </span>
+            <span className="page-pill">
+              Status: {statusData?.status ?? 'unknown'}
+            </span>
+          </Group>
+        </Stack>
+      </Box>
 
       <IndexSection projectId={id} />
 

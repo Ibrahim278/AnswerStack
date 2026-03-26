@@ -1,27 +1,27 @@
 import { useState, useEffect } from 'react';
 import {
-  Title,
   SimpleGrid,
-  Group,
   Button,
   Stack,
   Skeleton,
+  Text,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconPlus, IconStack2 } from '@tabler/icons-react';
+import { IconPlus, IconStack2, IconSparkles, IconFolderOpen } from '@tabler/icons-react';
 import { useSearchParams, useNavigate } from 'react-router';
 import { useProjects } from '../hooks/useProjects';
 import { ProjectCard } from '../components/projects/ProjectCard';
 import { CreateProjectModal } from '../components/projects/CreateProjectModal';
 import { DeleteProjectModal } from '../components/projects/DeleteProjectModal';
 import { EmptyState } from '../components/common/EmptyState';
+import { PageIntro } from '../components/common/PageIntro';
 import type { ProjectResponse } from '../types';
 
 function ProjectListSkeleton() {
   return (
     <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
       {Array.from({ length: 3 }, (_, i) => (
-        <Skeleton key={i} height={160} radius="md" />
+        <Skeleton key={i} height={200} radius="xl" />
       ))}
     </SimpleGrid>
   );
@@ -48,9 +48,11 @@ export default function ProjectListPage() {
   if (isLoading) {
     return (
       <Stack gap="lg">
-        <Group justify="space-between" align="center">
-          <Title order={1}>Projects</Title>
-        </Group>
+        <PageIntro
+          eyebrow="Workspace"
+          title="Projects"
+          description="Organize your knowledge bases, monitor indexing health, and jump back into active research threads."
+        />
         <ProjectListSkeleton />
       </Stack>
     );
@@ -62,7 +64,7 @@ export default function ProjectListPage() {
         <EmptyState
           icon={<IconStack2 size={48} />}
           title="Welcome to AnswerStack"
-          description="Create your first project to start building a knowledge base"
+          description="Create your first project to start building a source-grounded workspace for documents, indexing, and chat."
           action={{ label: 'New Project', onClick: createHandlers.open }}
         />
         <CreateProjectModal
@@ -75,15 +77,32 @@ export default function ProjectListPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="center">
-        <Title order={1}>Projects</Title>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          onClick={createHandlers.open}
-        >
-          New Project
-        </Button>
-      </Group>
+      <PageIntro
+        eyebrow="Workspace"
+        title="Projects"
+        description="Your active knowledge bases, with index health and recency visible at a glance."
+        actions={(
+          <Button leftSection={<IconPlus size={16} />} onClick={createHandlers.open}>
+            New Project
+          </Button>
+        )}
+        meta={(
+          <>
+            <span className="page-pill">
+              <IconFolderOpen size={16} />
+              {projects.length} active {projects.length === 1 ? 'project' : 'projects'}
+            </span>
+            <span className="page-pill">
+              <IconSparkles size={16} />
+              Pick up recent work faster
+            </span>
+          </>
+        )}
+      />
+
+      <Text size="sm" className="muted-copy" px="xs">
+        Tip: open a project to upload fresh material, rebuild its index, or continue a chat session.
+      </Text>
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
         {projects.map((project) => (

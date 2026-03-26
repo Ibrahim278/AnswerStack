@@ -4,9 +4,14 @@ import { notifications } from '@mantine/notifications';
 import { statusApi } from '../api/status';
 import { queryKeys } from '../api/queryKeys';
 
-export function useSystemStatus(projectId?: string) {
+interface UseSystemStatusOptions {
+  notifyTransitions?: boolean;
+}
+
+export function useSystemStatus(projectId?: string, options?: UseSystemStatusOptions) {
   const previousStatus = useRef<string | null>(null);
   const consecutiveFailures = useRef<number>(0);
+  const notifyTransitions = options?.notifyTransitions ?? false;
 
   const queryResult = useQuery({
     queryKey: queryKeys.systemStatus(projectId),
@@ -35,6 +40,7 @@ export function useSystemStatus(projectId?: string) {
 
   // Fire transition notifications on status changes
   useEffect(() => {
+    if (!notifyTransitions) return;
     if (!queryResult.data) return;
 
     const currentStatus = queryResult.data.status;
@@ -45,7 +51,7 @@ export function useSystemStatus(projectId?: string) {
     }
 
     previousStatus.current = currentStatus;
-  }, [queryResult.data]);
+  }, [notifyTransitions, queryResult.data]);
 
   const showOverlay = consecutiveFailures.current >= 5;
 

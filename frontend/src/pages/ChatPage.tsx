@@ -1,16 +1,20 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { Box, Alert } from '@mantine/core';
+import { Box, Alert, Group, Stack, Text, Title, UnstyledButton } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import {
   IconAlertCircle,
   IconRefresh,
+  IconSparkles,
+  IconBooks,
 } from '@tabler/icons-react';
 import { useChat } from '../hooks/useChat';
 import { useSessionDetail } from '../hooks/useSessions';
 import { useSuggestedPrompts } from '../hooks/useSuggestedPrompts';
 import { useSystemStatus } from '../hooks/useSystemStatus';
 import { useProject } from '../hooks/useProjects';
+import { useChatStore } from '../stores/chatStore';
+import { parseSources } from '../utils/chatSources';
 import { ChatMessageList } from '../components/chat/ChatMessageList';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { ChatEmptyState } from '../components/chat/ChatEmptyState';
@@ -56,6 +60,11 @@ export default function ChatPage() {
     projectId: projectId!,
     onSessionCreated: handleSessionCreated,
   });
+  const openSourcePanel = useChatStore((s) => s.openSourcePanel);
+  const activeSourceMsgId = useChatStore((s) => s.activeSourceMsgId);
+  const sourcePanelOpen = useChatStore((s) => s.sourcePanelOpen);
+  const currentSources = useChatStore((s) => s.currentSources);
+  const streamingMessageId = useChatStore((s) => s.streamingMessageId);
 
   // Determine if composer should be disabled
   const providerNotConfigured = systemStatus === 'misconfigured';
@@ -108,64 +117,115 @@ export default function ChatPage() {
   }
 
   const hasMessages = messages.length > 0 || isStreaming;
+  const latestSourceTarget = useMemo(() => {
+    if (currentSources.length > 0 && streamingMessageId) {
+      return { messageId: streamingMessageId, count: currentSources.length };
+    }
+
+    for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+      const message = messages[idx];
+      if (message.role !== 'assistant') continue;
+
+      const count = parseSources(message.sources_json).length;
+      if (count > 0) {
+        return { messageId: message.id, count };
+      }
+    }
+
+    return null;
+  }, [currentSources, messages, streamingMessageId]);
+  const sourceSummaryLabel = latestSourceTarget
+    ? `${latestSourceTarget.count} ${latestSourceTarget.count === 1 ? 'source' : 'sources'} ${isMobile ? 'in drawer' : 'on the right'}`
+    : (isMobile ? 'Sources appear in drawer' : 'Sources appear on the right');
+  const viewingLatestSources = latestSourceTarget
+    && sourcePanelOpen
+    && activeSourceMsgId === latestSourceTarget.messageId;
+
+  const handleSourceSummaryOpen = useCallback(() => {
+    if (latestSourceTarget) {
+      openSourcePanel(latestSourceTarget.messageId);
+    }
+  }, [latestSourceTarget, openSourcePanel]);
 
   return (
-    <Box
-      style={{
-        display: 'flex',
-        height: '100%',
-        overflow: 'hidden',
-      }}
-    >
+    <Box className="chat-shell">
       {/* Main chat area */}
-      <Box
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          transition: 'flex 200ms ease-out',
-        }}
-      >
+      <Box className="chat-column chat-surface">
+        <Box className="chat-topbar">
+          <Group justify="space-between" align="flex-start">
+            <Stack gap={6}>
+              <Text className="page-intro__eyebrow" mb={0}>
+                Chat Workspace
+              </Text>
+              <Title order={2}>
+                {sessionDetail?.title || `Ask ${project?.name ?? 'your project'}`}
+              </Title>
+              <Text size="sm" className="muted-copy">
+                Ground answers in indexed documents and open cited evidence as you read.
+              </Text>
+            </Stack>
+
+            <Group gap="sm">
+              <span className="page-pill">
+                <IconSparkles size={16} />
+                {messages.length} {messages.length === 1 ? 'message' : 'messages'}
+              </span>
+              <UnstyledButton
+                className="page-pill page-pill-button"
+                onClick={handleSourceSummaryOpen}
+                disabled={!latestSourceTarget}
+                aria-label={latestSourceTarget ? 'Open source evidence' : 'No source evidence yet'}
+                data-active={viewingLatestSources ? 'true' : undefined}
+              >
+                <IconBooks size={16} />
+                {viewingLatestSources ? `Viewing ${sourceSummaryLabel}` : sourceSummaryLabel}
+              </UnstyledButton>
+            </Group>
+          </Group>
+        </Box>
+
         {/* Warning banners */}
-        {providerNotConfigured && (
-          <ErrorBanner
-            title="Provider not configured"
-            message="Set up your LLM provider to enable chat"
-            color="yellow"
-            actions={[{
-              label: 'Go to Settings',
-              onClick: () => { void navigate('/settings'); },
-            }]}
-          />
-        )}
-        {systemStatus === 'no_documents' && (
-          <ErrorBanner
-            title="No documents indexed"
-            message="Upload and index documents to get source-grounded answers"
-            color="blue"
-            actions={[{
-              label: 'Go to Project',
-              onClick: () => { void navigate(`/projects/${projectId}`); },
-            }]}
-          />
-        )}
-        {systemStatus === 'stale' && (
-          <Alert
-            color="yellow"
-            icon={<IconRefresh size={18} />}
-            py="xs"
-          >
-            Index may be out of date -- answers might not reflect recent document changes.{' '}
-            <a
-              href={`/projects/${projectId}`}
-              onClick={(e) => { e.preventDefault(); void navigate(`/projects/${projectId}`); }}
-              style={{ color: 'var(--mantine-color-blue-6)' }}
+        <Stack gap="sm" p="md" pb={0}>
+          {providerNotConfigured && (
+            <ErrorBanner
+              title="Provider not configured"
+              message="Set up your LLM provider to enable chat"
+              color="yellow"
+              actions={[{
+                label: 'Go to Settings',
+                onClick: () => { void navigate('/settings'); },
+              }]}
+            />
+          )}
+          {systemStatus === 'no_documents' && (
+            <ErrorBanner
+              title="No documents indexed"
+              message="Upload and index documents to get source-grounded answers"
+              color="blue"
+              actions={[{
+                label: 'Go to Project',
+                onClick: () => { void navigate(`/projects/${projectId}`); },
+              }]}
+            />
+          )}
+          {systemStatus === 'stale' && (
+            <Alert
+              color="yellow"
+              icon={<IconRefresh size={18} />}
+              py="xs"
+              radius="xl"
             >
-              Rebuild
-            </a>
-          </Alert>
-        )}
+              Index may be out of date. Answers might not reflect recent document changes.{' '}
+              <a
+                href={`/projects/${projectId}`}
+                onClick={(e) => { e.preventDefault(); void navigate(`/projects/${projectId}`); }}
+                style={{ color: 'var(--mantine-color-ocean-7)' }}
+              >
+                Rebuild index
+              </a>
+            </Alert>
+          )}
+        </Stack>
 
         {/* Chat content */}
         {hasMessages ? (

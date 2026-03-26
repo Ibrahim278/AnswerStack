@@ -1,5 +1,15 @@
-import { Group, Burger, Text, Breadcrumbs, Anchor, ActionIcon, Box } from '@mantine/core';
-import { IconStack2, IconSettings } from '@tabler/icons-react';
+import {
+  Group,
+  Burger,
+  Text,
+  Breadcrumbs,
+  Anchor,
+  ActionIcon,
+  Box,
+  Stack,
+  ThemeIcon,
+} from '@mantine/core';
+import { IconSparkles, IconStack2, IconSettings } from '@tabler/icons-react';
 import { useLocation, useParams, useNavigate } from 'react-router';
 import { useUiStore } from '../../stores/uiStore';
 import { useProject } from '../../hooks/useProjects';
@@ -44,29 +54,28 @@ export function Header({ onMobileMenuToggle, mobileMenuOpened }: HeaderProps) {
         <Box
           component="button"
           onClick={() => { void navigate('/projects'); }}
-          style={{
-            cursor: 'pointer',
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            color: 'inherit',
-          }}
+          className="brand-button"
+          style={{ cursor: 'pointer', border: 'none', color: 'inherit' }}
           aria-label="Go to projects"
         >
-          <IconStack2 size={24} stroke={1.5} />
-          <Text fw={700} size="lg" visibleFrom="xs">
-            AnswerStack
-          </Text>
+          <span className="brand-mark">
+            <IconStack2 size={20} stroke={1.8} />
+          </span>
+          <Stack gap={0} visibleFrom="xs">
+            <Text fw={700} size="sm" lh={1.1}>
+              AnswerStack
+            </Text>
+            <Text size="xs" c="dimmed" lh={1.1}>
+              Evidence-first workspace
+            </Text>
+          </Stack>
         </Box>
       </Group>
 
       {/* Center section - Breadcrumb (desktop only) */}
       {projectId && project && (
         <Box visibleFrom="sm" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-          <Breadcrumbs>
+          <Breadcrumbs separator="·">
             <Anchor onClick={() => { void navigate('/projects'); }} style={{ cursor: 'pointer' }}>
               Projects
             </Anchor>
@@ -77,10 +86,19 @@ export function Header({ onMobileMenuToggle, mobileMenuOpened }: HeaderProps) {
 
       {/* Right section */}
       <Group gap="sm" wrap="nowrap">
+        <ThemeIcon
+          variant="light"
+          color="ocean"
+          radius="xl"
+          size="lg"
+          visibleFrom="md"
+        >
+          <IconSparkles size={16} stroke={1.8} />
+        </ThemeIcon>
         <StatusBadge />
         <ActionIcon
-          variant="subtle"
-          color="gray"
+          variant="light"
+          color="ocean"
           size="lg"
           onClick={() => { void navigate('/settings'); }}
           aria-label="Settings"

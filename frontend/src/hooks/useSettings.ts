@@ -16,6 +16,7 @@ export function useUpdateSettings() {
     mutationFn: (data: SettingsUpdate) => settingsApi.update(data),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.provider.models });
     },
   });
 }
@@ -26,6 +27,7 @@ export function useResetSettings() {
     mutationFn: () => settingsApi.reset(),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.provider.models });
     },
   });
 }

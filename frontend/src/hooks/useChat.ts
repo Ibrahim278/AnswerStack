@@ -71,9 +71,24 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
         queryKeys.sessions.detail(sessionId),
         (old) => {
           if (!old) return old;
-          return { ...old, messages: [...old.messages, userMsg, assistantMsg] };
+          const messages = [...old.messages];
+          const lastMessage = messages[messages.length - 1];
+          const userAlreadyPresent =
+            lastMessage?.role === 'user' && lastMessage.content === userMsg.content;
+
+          if (!userAlreadyPresent) {
+            messages.push(userMsg);
+          }
+
+          const assistantAlreadyPresent = messages.some((message) => message.id === assistantMsg.id);
+          if (!assistantAlreadyPresent) {
+            messages.push(assistantMsg);
+          }
+
+          return { ...old, messages };
         },
       );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.detail(sessionId) });
       // Invalidate session list to update title/timestamps (D-68)
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list(projectId) });
     },
@@ -98,7 +113,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
 
       // Pre-create user message for optimistic update
       const userMessage: ChatMessageResponse = {
-        id: crypto.randomUUID(),
+        id: self.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         session_id: sessionId ?? '',
         role: 'user',
         content: question,
