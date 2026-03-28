@@ -984,6 +984,150 @@ async def test_incremental_cancel_keeps_previously_indexed_documents(
         client._transport.app.state.embedding_service.embed_texts = original_embed  # type: ignore[union-attr]
 
 
+async def test_incremental_cancel_before_work_starts_keeps_pending_document_parsed(
+    project_with_parsed_docs,
+    mock_vector_repo,
+):
+    """Cancelling an incremental rebuild before the first document starts should leave prior docs indexed."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+
+    def slow_collection_count(project_id):
+        import time
+
+        slow_collection_count.calls += 1
+        if slow_collection_count.calls == 1:
+            time.sleep(0.3)
+        return sum(doc["chunk_count"] for doc in baseline_docs)
+
+    slow_collection_count.calls = 0
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.side_effect = slow_collection_count
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[("files", ("cancel-before-start.txt", b"cancel before work starts " * 60, "text/plain"))],
+    )
+    assert upload_resp.status_code == 202
+    await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(baseline_docs) + 1 and any(d["id"] not in baseline_doc_ids and d["status"] == "parsed" for d in items),
+    )
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+    running = await _wait_for_job_running(client, project_id)
+    assert running["job"]["documents_total"] == 1
+    assert running["job"]["documents_processed"] == 0
+
+    cancel_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/cancel")
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["status"] == "cancelled"
+
+    terminal = await _wait_for_job_terminal_state(client, project_id)
+    assert terminal["job"]["status"] == "cancelled"
+    assert terminal["job"]["documents_processed"] == 0
+
+    docs = await _list_documents(client, project_id)
+    old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+    new_doc = next(doc for doc in docs if doc["id"] not in baseline_doc_ids)
+    assert all(doc["status"] == "indexed" for doc in old_docs)
+    assert new_doc["status"] == "parsed"
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["index_status"] == "stale"
+
+
+async def test_incremental_cancel_near_completion_preserves_completed_documents(
+    project_with_parsed_docs,
+    mock_vector_repo,
+):
+    """Cancelling an incremental rebuild near completion should only leave remaining delta work stale."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[
+            ("files", ("near-completion-a.txt", b"first near completion delta " * 50, "text/plain")),
+            ("files", ("near-completion-b.txt", b"second near completion delta " * 50, "text/plain")),
+            ("files", ("near-completion-c.txt", b"third near completion delta " * 50, "text/plain")),
+        ],
+    )
+    assert upload_resp.status_code == 202
+    await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(baseline_docs) + 3 and len([d for d in items if d["id"] not in baseline_doc_ids and d["status"] == "parsed"]) == 3,
+    )
+
+    from unittest.mock import AsyncMock
+
+    original_embed = client._transport.app.state.embedding_service.embed_texts  # type: ignore[union-attr]
+
+    async def slow_embed(texts, model):
+        await asyncio.sleep(0.2)
+        return [[0.1] * 384 for _ in texts]
+
+    client._transport.app.state.embedding_service.embed_texts = AsyncMock(side_effect=slow_embed)  # type: ignore[union-attr]
+
+    try:
+        build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+        assert build_resp.status_code == 202
+
+        running = await _wait_for_status_body(
+            client,
+            project_id,
+            lambda body: body["job"]
+            and body["job"]["status"] == "running"
+            and body["job"]["documents_processed"] == 2
+            and body["job"]["documents_total"] == 3,
+        )
+        assert running["job"]["documents_total"] == 3
+
+        await _wait_for_documents(
+            client,
+            project_id,
+            lambda items: any(
+                doc["id"] not in baseline_doc_ids and doc["status"] == "indexing"
+                for doc in items
+            ),
+        )
+
+        cancel_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/cancel")
+        assert cancel_resp.status_code == 200
+        assert cancel_resp.json()["status"] == "cancelled"
+
+        terminal = await _wait_for_job_terminal_state(client, project_id)
+        assert terminal["job"]["status"] == "cancelled"
+        assert terminal["job"]["documents_processed"] == 2
+
+        docs = await _list_documents(client, project_id)
+        old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+        new_docs = [doc for doc in docs if doc["id"] not in baseline_doc_ids]
+        assert all(doc["status"] == "indexed" for doc in old_docs)
+        assert len([doc for doc in new_docs if doc["status"] == "indexed"]) == 2
+        assert len([doc for doc in new_docs if doc["status"] in {"parsed", "stale"}]) == 1
+
+        status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert status_resp.status_code == 200
+        assert status_resp.json()["index_status"] == "stale"
+    finally:
+        client._transport.app.state.embedding_service.embed_texts = original_embed  # type: ignore[union-attr]
+
+
 async def test_trigger_build_detects_missing_collection_and_rebuilds_indexed_documents(
     project_with_parsed_docs,
     mock_vector_repo,
