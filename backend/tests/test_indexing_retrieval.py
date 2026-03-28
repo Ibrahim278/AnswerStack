@@ -173,3 +173,98 @@ async def test_retrieval_integrity_after_settings_change_full_rebuild(
     assert results
     assert all(result.document_name == "alpha.txt" for result in results)
     assert all(result.chunk_id in after_chunk_ids for result in results)
+
+
+async def test_retrieval_integrity_after_rechunk_reparse_rebuild_has_no_duplicate_chunks(
+    async_client_with_indexing,
+    mock_vector_repo,
+    mock_embedding_service,
+):
+    """Repeated rechunk rebuilds should leave only the current chunk ids retrievable."""
+    client = async_client_with_indexing
+    _configure_keyword_embeddings(mock_embedding_service)
+    vector_store = _install_stateful_vector_repo(mock_vector_repo)
+
+    project_id = await _create_project_with_parsed_documents(
+        client,
+        name="Retrieval Dedupe",
+        files=[
+            ("gamma.txt", ("gamma " * 1200).encode()),
+        ],
+    )
+    await _build_project_index(client, project_id)
+
+    initial_chunk_ids = set(vector_store[project_id].keys())
+    assert len(initial_chunk_ids) > 1
+
+    settings_resp = await client.put("/api/v1/settings", json={"chunk_size": 600})
+    assert settings_resp.status_code == 200
+    await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: all(doc["status"] == "reindex_required" for doc in items),
+    )
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+    await _wait_for_index_status(client, project_id, "indexed")
+    middle_chunk_ids = set(vector_store[project_id].keys())
+    assert middle_chunk_ids
+    assert initial_chunk_ids.isdisjoint(middle_chunk_ids)
+
+    settings_resp = await client.put(
+        "/api/v1/settings",
+        json={"chunk_size": 450, "chunk_overlap": 100},
+    )
+    assert settings_resp.status_code == 200
+    await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: all(doc["status"] == "reindex_required" for doc in items),
+    )
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+    await _wait_for_index_status(client, project_id, "indexed")
+    final_chunk_ids = set(vector_store[project_id].keys())
+    assert final_chunk_ids
+    assert initial_chunk_ids.isdisjoint(final_chunk_ids)
+    assert middle_chunk_ids.isdisjoint(final_chunk_ids)
+
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.models.document import Chunk, Document
+    from app.services.retrieval import RetrievalService
+
+    async with client._transport.app.state.session_factory() as session:  # type: ignore[union-attr]
+        db_chunk_ids = {
+            str(chunk_id)
+            for chunk_id in (
+                await session.execute(
+                    select(Chunk.id).join(Document).where(Document.project_id == UUID(project_id))
+                )
+            ).scalars()
+        }
+
+    assert final_chunk_ids == db_chunk_ids
+
+    retrieval = RetrievalService(
+        mock_vector_repo,
+        client._transport.app.state.embedding_service,  # type: ignore[union-attr]
+        ranker=None,
+    )
+    results = await retrieval.retrieve(
+        UUID(project_id),
+        query="gamma",
+        embedding_model="text-embedding-test",
+        top_k=len(final_chunk_ids),
+        initial_k=len(final_chunk_ids),
+        reranker_enabled=False,
+        similarity_threshold=0.1,
+    )
+    retrieved_chunk_ids = [result.chunk_id for result in results]
+    assert retrieved_chunk_ids
+    assert len(retrieved_chunk_ids) == len(set(retrieved_chunk_ids))
+    assert set(retrieved_chunk_ids) == final_chunk_ids

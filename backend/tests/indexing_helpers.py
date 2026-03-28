@@ -32,7 +32,7 @@ async def _wait_for_index_status(
     project_id: str,
     expected_status: str,
     *,
-    attempts: int = 60,
+    attempts: int = 120,
     delay: float = 0.05,
 ) -> dict:
     last_body: dict = {}
@@ -69,8 +69,8 @@ async def _wait_for_job_running(
     client,
     project_id: str,
     *,
-    attempts: int = 60,
-    delay: float = 0.05,
+    attempts: int = 150,
+    delay: float = 0.02,
 ) -> dict:
     last_body: dict = {}
     for _ in range(attempts):
@@ -89,8 +89,8 @@ async def _wait_for_status_body(
     project_id: str,
     predicate,
     *,
-    attempts: int = 80,
-    delay: float = 0.05,
+    attempts: int = 200,
+    delay: float = 0.02,
 ) -> dict:
     last_body: dict = {}
     for _ in range(attempts):

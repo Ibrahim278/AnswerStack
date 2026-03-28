@@ -113,6 +113,113 @@ async def test_incremental_upload_rebuilds_only_new_document(
     assert mock_embedding_service.embed_texts.call_count == 1
 
 
+async def test_new_document_parsing_keeps_indexed_project_stale(
+    project_with_parsed_docs,
+    mock_vector_repo,
+    monkeypatch,
+):
+    """A newly uploaded document must keep a previously indexed project stale while parsing."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+
+    import time
+
+    from app.services import document as document_service_module
+
+    original_get_parser = document_service_module.get_parser_for_extension
+
+    class SlowParser:
+        def __init__(self, parser):
+            self._parser = parser
+
+        def parse(self, content: bytes, filename: str):
+            time.sleep(1.0)
+            return self._parser.parse(content, filename)
+
+    def slow_get_parser(extension: str):
+        return SlowParser(original_get_parser(extension))
+
+    monkeypatch.setattr(document_service_module, "get_parser_for_extension", slow_get_parser)
+
+    new_doc = await _upload_document_without_background(
+        client,
+        project_id,
+        filename="parsing-now.txt",
+        content=b"new parsing content " * 60,
+    )
+    new_doc_id = new_doc["id"]
+
+    from pathlib import Path
+    from uuid import UUID
+
+    original_parse_document_background = document_service_module._parse_document_background
+    file_path = (
+        Path(client._transport.app.state.settings.document_storage_path)  # type: ignore[union-attr]
+        / project_id
+        / new_doc_id
+        / new_doc["filename"]
+    )
+    parse_task = asyncio.create_task(
+        original_parse_document_background(
+            client._transport.app.state.session_factory,  # type: ignore[union-attr]
+            UUID(new_doc_id),
+            file_path,
+            client._transport.app.state.settings,  # type: ignore[union-attr]
+        )
+    )
+
+    try:
+        docs = await _wait_for_documents(
+            client,
+            project_id,
+            lambda items: len(items) == len(baseline_docs) + 1
+            and any(
+                doc["filename"] == "parsing-now.txt" and doc["status"] == "parsing"
+                for doc in items
+            ),
+        )
+        parsing_doc = next(doc for doc in docs if doc["filename"] == "parsing-now.txt")
+        old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+        assert parsing_doc["status"] == "parsing"
+        assert all(doc["status"] == "indexed" for doc in old_docs)
+
+        status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert status_resp.status_code == 200
+        status_body = status_resp.json()
+        assert status_body["index_status"] == "stale"
+        assert status_body["index_status"] != "indexed"
+        assert status_body["job"]["status"] == "completed"
+
+        await asyncio.sleep(0.2)
+        status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert status_resp.status_code == 200
+        assert status_resp.json()["index_status"] == "stale"
+
+        docs = await _wait_for_documents(
+            client,
+            project_id,
+            lambda items: len(items) == len(baseline_docs) + 1
+            and any(
+                doc["filename"] == "parsing-now.txt" and doc["status"] == "parsed"
+                for doc in items
+            ),
+        )
+        parsing_doc = next(doc for doc in docs if doc["filename"] == "parsing-now.txt")
+        assert parsing_doc["status"] == "parsed"
+
+        status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert status_resp.status_code == 200
+        assert status_resp.json()["index_status"] == "stale"
+    finally:
+        await asyncio.wait_for(parse_task, timeout=2.0)
+
+
 async def test_delete_parsed_document_restores_indexed_project(project_with_parsed_docs, mock_vector_repo):
     """Deleting the only newly parsed document should restore a previously indexed project to indexed."""
     data = project_with_parsed_docs
@@ -597,3 +704,96 @@ async def test_incremental_embedding_failure_preserves_existing_index_and_recove
     assert retry_resp.status_code == 202
     final_status = await _wait_for_index_status(client, project_id, "indexed")
     assert final_status["job"]["documents_total"] == 1
+
+
+async def test_parse_failure_on_upload_keeps_failed_doc_out_of_incremental_rebuild(
+    project_with_parsed_docs,
+    mock_vector_repo,
+    monkeypatch,
+):
+    """A parse failure should leave accurate failed state and rebuild only successfully parsed docs."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+
+    from app.services import document as document_service_module
+
+    original_get_parser = document_service_module.get_parser_for_extension
+
+    class ControlledParser:
+        def __init__(self, parser):
+            self._parser = parser
+
+        def parse(self, content: bytes, filename: str):
+            if filename == "broken-upload.txt":
+                raise ValueError("controlled parse failure")
+            return self._parser.parse(content, filename)
+
+    def controlled_get_parser(extension: str):
+        return ControlledParser(original_get_parser(extension))
+
+    monkeypatch.setattr(
+        document_service_module,
+        "get_parser_for_extension",
+        controlled_get_parser,
+    )
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[
+            ("files", ("broken-upload.txt", b"broken parsing content " * 20, "text/plain")),
+            ("files", ("fresh-after-failure.txt", b"fresh good content " * 50, "text/plain")),
+        ],
+    )
+    assert upload_resp.status_code == 202
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(baseline_docs) + 2
+        and any(doc["filename"] == "broken-upload.txt" and doc["status"] == "failed" for doc in items)
+        and any(
+            doc["filename"] == "fresh-after-failure.txt" and doc["status"] == "parsed"
+            for doc in items
+        ),
+    )
+    failed_doc = next(doc for doc in docs if doc["filename"] == "broken-upload.txt")
+    parsed_doc = next(doc for doc in docs if doc["filename"] == "fresh-after-failure.txt")
+    old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+    assert failed_doc["status"] == "failed"
+    assert failed_doc["error_detail"]["stage"] == "parsing"
+    assert "controlled parse failure" in failed_doc["error_detail"]["message"]
+    assert parsed_doc["status"] == "parsed"
+    assert all(doc["status"] == "indexed" for doc in old_docs)
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    status_body = status_resp.json()
+    assert status_body["index_status"] == "stale"
+    assert status_body["job"]["status"] == "completed"
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == 1
+    assert final_status["job"]["documents_processed"] == 1
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: all(
+            doc["status"] in {"indexed", "failed"} for doc in items
+        )
+        and any(doc["filename"] == "fresh-after-failure.txt" and doc["status"] == "indexed" for doc in items),
+    )
+    failed_doc = next(doc for doc in docs if doc["filename"] == "broken-upload.txt")
+    parsed_doc = next(doc for doc in docs if doc["filename"] == "fresh-after-failure.txt")
+    old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+    assert failed_doc["status"] == "failed"
+    assert parsed_doc["status"] == "indexed"
+    assert all(doc["status"] == "indexed" for doc in old_docs)
