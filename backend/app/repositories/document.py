@@ -82,10 +82,8 @@ class SQLAlchemyDocumentRepository(DocumentRepository):
         document = await self.get_by_id(id)
         if document is None:
             return False
-        # Explicit bulk delete of chunks to avoid async lazy-loading issues
-        await self._session.execute(
-            sa_delete(Chunk).where(Chunk.document_id == id)
-        )
+        # Delete through the ORM parent so the chunk relationship is
+        # cleaned up exactly once via cascade/delete-orphan.
         await self._session.delete(document)
         await self._session.flush()
         return True

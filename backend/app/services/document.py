@@ -299,15 +299,22 @@ async def _parse_document_background(
                 )
                 chunk_entities.append(chunk)
 
-            # Add all chunks to session
-            session.add_all(chunk_entities)
-
-            # Update document status
-            await repo.update_status(
+            # The document may have been deleted while parsing was in flight.
+            updated_document = await repo.update_status(
                 document_id,
                 DocumentStatus.PARSED,
                 chunk_count=len(chunks_text),
             )
+            if updated_document is None:
+                log.info(
+                    "Document deleted before parse completion",
+                    document_id=str(document_id),
+                )
+                await session.rollback()
+                return
+
+            # Add all chunks only after confirming the document still exists.
+            session.add_all(chunk_entities)
 
             await session.commit()
 
