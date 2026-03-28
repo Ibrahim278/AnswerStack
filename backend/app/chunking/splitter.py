@@ -11,8 +11,8 @@ class RecursiveTextSplitter:
 
     def __init__(
         self,
-        chunk_size: int = 4000,
-        chunk_overlap: int = 800,
+        chunk_size: int = 2200,
+        chunk_overlap: int = 250,
         separators: list[str] | None = None,
     ):
         self.chunk_size = chunk_size

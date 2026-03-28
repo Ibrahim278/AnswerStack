@@ -2,6 +2,7 @@
 
 import inspect
 import json
+import re
 import uuid
 from uuid import UUID
 
@@ -187,6 +188,20 @@ async def stream_chat(
                     ),
                 }
 
+                # Skip retrieval for short conversational follow-ups
+                # when there's already conversation history
+                _q = body.question.strip().rstrip("?!.,")
+                _is_followup = (
+                    len(history) > 1
+                    and _q.lower() in {
+                        "ok", "okay", "yes", "no", "thanks", "thank you",
+                        "got it", "sure", "right", "is that right",
+                        "is that correct", "go on", "continue",
+                        "can you elaborate", "tell me more",
+                        "what else", "anything else",
+                    }
+                )
+
                 # retrieval_start event (D-88, D-89)
                 event_seq += 1
                 yield {
@@ -195,24 +210,29 @@ async def stream_chat(
                     "data": json.dumps({}),
                 }
 
-                # Retrieve relevant chunks (RETR-01)
-                retrieval_service = RetrievalService(
-                    vector_repo, embedding_service, ranker
-                )
-                chunks = await retrieval_service.retrieve(
-                    project_id=project_id,
-                    query=body.question,
-                    embedding_model=settings.embedding_model,
-                    top_k=settings.top_k,
-                    similarity_threshold=settings.similarity_threshold,
-                    reranker_enabled=settings.reranker_enabled,
-                )
+                if _is_followup:
+                    # Use empty chunks -- LLM will answer from conversation history
+                    chunks: list = []
+                else:
+                    # Retrieve relevant chunks (RETR-01)
+                    retrieval_service = RetrievalService(
+                        vector_repo, embedding_service, ranker
+                    )
+                    chunks = await retrieval_service.retrieve(
+                        project_id=project_id,
+                        query=body.question,
+                        embedding_model=settings.embedding_model,
+                        top_k=settings.top_k,
+                        similarity_threshold=settings.similarity_threshold,
+                        reranker_enabled=settings.reranker_enabled,
+                    )
 
                 if await request.is_disconnected():
                     return
 
                 # No-context handling (CHAT-08)
-                if not chunks:
+                # Skip canned response for follow-ups -- let LLM use conversation history
+                if not chunks and not _is_followup:
                     # retrieval_start already emitted above; emit sources
                     # immediately so frontend gets consistent sequence
                     no_answer = (
@@ -258,18 +278,30 @@ async def stream_chat(
 
                 # Build system prompt with source context
                 source_context = RetrievalService.build_source_context(chunks)
-                system_prompt = (
-                    settings.system_prompt
-                    + "\n\n"
-                    "INSTRUCTIONS:\n"
-                    "- Only answer from the provided context below. "
-                    "Do not use prior knowledge.\n"
-                    "- If the context does not contain sufficient information, "
-                    "say so.\n"
-                    "- Cite sources by number, e.g. [Source 1], [Source 2].\n"
-                    "- Be concise and accurate.\n\n"
-                    "CONTEXT:\n" + source_context
-                )
+                if source_context:
+                    system_prompt = (
+                        settings.system_prompt
+                        + "\n\n"
+                        "INSTRUCTIONS:\n"
+                        "- ONLY answer using information from the CONTEXT section below. "
+                        "NEVER use your training data or prior knowledge.\n"
+                        "- Every factual claim MUST include a citation like [Source 1], [Source 2].\n"
+                        "- If the context does not contain enough information to answer, "
+                        "say exactly: \"I don't have enough information in the provided sources "
+                        "to answer this question.\" Do NOT attempt to answer from memory.\n"
+                        "- Be concise and accurate.\n\n"
+                        "CONTEXT:\n" + source_context
+                    )
+                else:
+                    # Follow-up with no new retrieval -- rely on conversation history
+                    system_prompt = (
+                        settings.system_prompt
+                        + "\n\n"
+                        "INSTRUCTIONS:\n"
+                        "- Answer based on the conversation history above.\n"
+                        "- If you previously cited sources, you may reference them.\n"
+                        "- Be concise and accurate.\n"
+                    )
 
                 # Build messages array with conversation history
                 messages = [{"role": "system", "content": system_prompt}]
@@ -331,21 +363,33 @@ async def stream_chat(
                             "data": token_text,
                         }
 
+                # Only keep sources the LLM actually cited
+                cited_nums = set(
+                    int(m) for m in re.findall(r'Source\s+(\d+)', full_response)
+                )
+                effective_sources = [
+                    s for i, s in enumerate(sources_payload, start=1)
+                    if i in cited_nums
+                ]
+
                 # Save complete assistant message with sources
                 await chat_service.add_message(
                     session.id,
                     "assistant",
                     full_response,
-                    sources_json=sources_payload,
+                    sources_json=effective_sources,
                 )
                 await db_session.commit()
 
-                # message_complete event
+                # message_complete event (includes cited sources for frontend update)
                 event_seq += 1
                 yield {
                     "event": "message_complete",
                     "id": str(event_seq),
-                    "data": json.dumps({"token_count": token_count}),
+                    "data": json.dumps({
+                        "token_count": token_count,
+                        "sources": effective_sources,
+                    }),
                 }
 
                 # done event

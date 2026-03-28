@@ -43,6 +43,16 @@ class DocumentRepository(Repository[Document]):
         """
         ...
 
+    @abstractmethod
+    async def bulk_update_project_statuses(
+        self,
+        project_id: UUID,
+        from_statuses: tuple[DocumentStatus, ...],
+        to_status: DocumentStatus,
+    ) -> int:
+        """Bulk-update project documents from one of *from_statuses* to *to_status*."""
+        ...
+
 
 class SQLAlchemyDocumentRepository(DocumentRepository):
     def __init__(self, session: AsyncSession):
@@ -155,6 +165,22 @@ class SQLAlchemyDocumentRepository(DocumentRepository):
                 Document.status == DocumentStatus.INDEXING,
             )
             .values(status=DocumentStatus.PARSED)
+        )
+        return result.rowcount
+
+    async def bulk_update_project_statuses(
+        self,
+        project_id: UUID,
+        from_statuses: tuple[DocumentStatus, ...],
+        to_status: DocumentStatus,
+    ) -> int:
+        result = await self._session.execute(
+            sa_update(Document)
+            .where(
+                Document.project_id == project_id,
+                Document.status.in_(from_statuses),
+            )
+            .values(status=to_status)
         )
         return result.rowcount
 

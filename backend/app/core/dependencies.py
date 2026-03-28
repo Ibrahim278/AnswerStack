@@ -1,4 +1,4 @@
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
@@ -35,8 +35,9 @@ async def get_document_repository(
 
 async def get_document_service(
     repo: DocumentRepository = Depends(get_document_repository),
+    project_repo: ProjectRepository = Depends(get_project_repository),
 ) -> DocumentService:
-    return DocumentService(repo, get_settings())
+    return DocumentService(repo, get_settings(), project_repo)
 
 
 async def get_settings_repository(
@@ -58,12 +59,19 @@ async def get_indexing_job_repository(
 
 
 async def get_indexing_service(
+    request: Request,
     job_repo: IndexingJobRepository = Depends(get_indexing_job_repository),
     doc_repo: DocumentRepository = Depends(get_document_repository),
     project_repo: ProjectRepository = Depends(get_project_repository),
     settings_repo: SettingsRepository = Depends(get_settings_repository),
 ) -> IndexingService:
-    return IndexingService(job_repo, doc_repo, project_repo, settings_repo)
+    return IndexingService(
+        job_repo,
+        doc_repo,
+        project_repo,
+        settings_repo,
+        request.app.state.vector_repo,
+    )
 
 
 async def get_chat_repository(

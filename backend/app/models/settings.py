@@ -37,10 +37,10 @@ class Settings(Base):
         nullable=False,
     )
     chunk_size: Mapped[int] = mapped_column(
-        Integer, default=4000, nullable=False
+        Integer, default=2200, nullable=False
     )
     chunk_overlap: Mapped[int] = mapped_column(
-        Integer, default=800, nullable=False
+        Integer, default=250, nullable=False
     )
     top_k: Mapped[int] = mapped_column(
         Integer, default=5, nullable=False

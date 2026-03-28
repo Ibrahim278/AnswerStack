@@ -1,12 +1,21 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, UploadFile
 
 from app.core.config import get_settings
-from app.core.dependencies import get_document_service, get_project_service
+from app.core.dependencies import (
+    get_document_service,
+    get_indexing_service,
+    get_project_repository,
+    get_project_service,
+)
+from app.models.document import DocumentStatus
+from app.repositories.project import ProjectRepository
 from app.schemas.document import DocumentResponse, DocumentUploadResult, RejectedFile
 from app.schemas.pagination import PaginatedResponse
 from app.services.document import DocumentService, FileData
+from app.services.indexing import IndexingService
 from app.services.project import ProjectService
 
 router = APIRouter(prefix="/projects/{project_id}/documents", tags=["documents"])
@@ -105,7 +114,10 @@ async def get_document(
 async def delete_document(
     project_id: UUID,
     document_id: UUID,
+    request: Request,
     service: DocumentService = Depends(get_document_service),
+    indexing_service: IndexingService = Depends(get_indexing_service),
+    project_repo: ProjectRepository = Depends(get_project_repository),
 ) -> None:
     """Delete a document, its chunks, and its file from disk."""
     # Verify document belongs to the requested project
@@ -113,4 +125,16 @@ async def delete_document(
     if document.project_id != project_id:
         from app.core.errors import NotFoundError
         raise NotFoundError("document", str(document_id))
+
+    was_indexed = document.status == DocumentStatus.INDEXED
     await service.delete_document(document_id)
+
+    if was_indexed:
+        await asyncio.to_thread(
+            request.app.state.vector_repo.delete_document_embeddings,
+            project_id,
+            document_id,
+        )
+
+    new_status = await indexing_service.compute_stale_status(project_id)
+    await project_repo.update(project_id, index_status=new_status)

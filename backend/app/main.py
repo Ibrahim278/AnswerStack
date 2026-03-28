@@ -96,12 +96,14 @@ async def lifespan(app: FastAPI):
     logger.info("Embedding service initialized")
 
     # Initialize FlashRank reranker (singleton on app.state)
+    # Pipeline uses cosine similarity as the quality gate; reranker is for ordering only.
+    # Collapse detection handles FlashRank's near-zero scores gracefully.
     try:
         from flashrank import Ranker
 
-        ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", max_length=512)
+        ranker = Ranker(model_name="rank-T5-flan", max_length=512)
         app.state.ranker = ranker
-        logger.info("FlashRank reranker initialized", model="ms-marco-MiniLM-L-12-v2")
+        logger.info("FlashRank reranker initialized", model="rank-T5-flan")
     except Exception as e:
         app.state.ranker = None
         logger.warning("FlashRank reranker not available, reranking disabled", error=str(e))

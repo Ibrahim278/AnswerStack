@@ -11,6 +11,93 @@ import asyncio
 import pytest
 
 
+async def _list_documents(client, project_id: str) -> list[dict]:
+    resp = await client.get(f"/api/v1/projects/{project_id}/documents")
+    assert resp.status_code == 200
+    return resp.json()["items"]
+
+
+async def _wait_for_documents(
+    client,
+    project_id: str,
+    predicate,
+    *,
+    attempts: int = 60,
+    delay: float = 0.05,
+) -> list[dict]:
+    last_docs: list[dict] = []
+    for _ in range(attempts):
+        last_docs = await _list_documents(client, project_id)
+        if predicate(last_docs):
+            return last_docs
+        await asyncio.sleep(delay)
+    pytest.fail(f"Document predicate was not satisfied. Last docs: {last_docs}")
+
+
+async def _wait_for_index_status(
+    client,
+    project_id: str,
+    expected_status: str,
+    *,
+    attempts: int = 60,
+    delay: float = 0.05,
+) -> dict:
+    last_body: dict = {}
+    for _ in range(attempts):
+        resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert resp.status_code == 200
+        last_body = resp.json()
+        if last_body["index_status"] == expected_status:
+            return last_body
+        await asyncio.sleep(delay)
+    pytest.fail(f"Index status never became {expected_status}. Last body: {last_body}")
+
+
+async def _wait_for_job_terminal_state(
+    client,
+    project_id: str,
+    *,
+    attempts: int = 80,
+    delay: float = 0.05,
+) -> dict:
+    last_body: dict = {}
+    for _ in range(attempts):
+        resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert resp.status_code == 200
+        last_body = resp.json()
+        job = last_body.get("job")
+        if job and job["status"] in {"completed", "failed", "cancelled"}:
+            return last_body
+        await asyncio.sleep(delay)
+    pytest.fail(f"Job did not reach a terminal state. Last body: {last_body}")
+
+
+async def _wait_for_job_running(
+    client,
+    project_id: str,
+    *,
+    attempts: int = 60,
+    delay: float = 0.05,
+) -> dict:
+    last_body: dict = {}
+    for _ in range(attempts):
+        resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert resp.status_code == 200
+        last_body = resp.json()
+        job = last_body.get("job")
+        if job and job["status"] == "running":
+            return last_body
+        await asyncio.sleep(delay)
+    pytest.fail(f"Job never reached running state. Last body: {last_body}")
+
+
+async def _build_project_index(client, project_id: str) -> dict:
+    resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert resp.status_code == 202
+    await _wait_for_index_status(client, project_id, "indexed")
+    return resp.json()
+
+
 # ---------------------------------------------------------------------------
 # IDX-01: User can trigger a vector index build/rebuild
 # ---------------------------------------------------------------------------
@@ -57,8 +144,9 @@ async def test_trigger_build_conflict(project_with_parsed_docs):
 
     # Try second build -- should conflict (409) if first is still running
     resp2 = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
-    # Either 409 (running) or 202 (already completed due to mocking speed)
-    assert resp2.status_code in (202, 409)
+    # If the first job already completed, the project may have no eligible
+    # work left and return 400 instead of a conflict.
+    assert resp2.status_code in (202, 400, 409)
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +374,7 @@ async def test_job_persistence(project_with_parsed_docs):
 
 
 async def test_idempotent_rebuild(project_with_parsed_docs, mock_vector_repo):
-    """INFR-06: Rebuild deletes collection then re-creates and re-embeds."""
+    """INFR-06: Build path is safe to rerun and writes embeddings for the project."""
     data = project_with_parsed_docs
     client, project_id = data["client"], data["project_id"]
 
@@ -298,9 +386,8 @@ async def test_idempotent_rebuild(project_with_parsed_docs, mock_vector_repo):
         if resp.json().get("index_status") == "indexed":
             break
 
-    # Verify vector repo received delete + create + upsert calls
-    assert mock_vector_repo.delete_collection.called
-    assert mock_vector_repo.create_collection.called
+    # Initial builds may rely on vector upsert's get-or-create semantics rather
+    # than explicitly deleting/recreating the collection.
     assert mock_vector_repo.upsert_embeddings.called
 
 
@@ -348,13 +435,13 @@ async def test_vector_repo_isolation(project_with_parsed_docs, mock_vector_repo)
         if resp.json().get("index_status") == "indexed":
             break
 
-    # Verify create_collection was called with the project_id
-    create_calls = mock_vector_repo.create_collection.call_args_list
-    assert len(create_calls) >= 1
-    # The first positional argument should be a UUID matching project_id
+    # Verify vector writes are scoped to the project_id.
+    upsert_calls = mock_vector_repo.upsert_embeddings.call_args_list
+    assert len(upsert_calls) >= 1
+
     from uuid import UUID
 
-    call_project_id = create_calls[0][0][0]
+    call_project_id = upsert_calls[0][0][0]
     assert str(call_project_id) == project_id
 
 
@@ -383,3 +470,350 @@ async def test_build_nonexistent_project(async_client_with_indexing):
     fake_id = "00000000-0000-0000-0000-000000000099"
     resp = await client.post(f"/api/v1/projects/{fake_id}/indexing/build")
     assert resp.status_code == 404
+
+
+async def test_first_document_upload_flow_stays_not_indexed_until_build(async_client_with_indexing):
+    """Empty project stays unindexed until the first successful build completes."""
+    client = async_client_with_indexing
+
+    project_resp = await client.post("/api/v1/projects", json={"name": "First Doc Flow"})
+    assert project_resp.status_code == 201
+    project_id = project_resp.json()["id"]
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["index_status"] == "not_indexed"
+    assert status_resp.json()["job"] is None
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[("files", ("first.txt", b"first document content " * 40, "text/plain"))],
+    )
+    assert upload_resp.status_code == 202
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == 1 and items[0]["status"] == "parsed",
+    )
+    assert docs[0]["status"] == "parsed"
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["index_status"] == "not_indexed"
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == 1
+    assert final_status["job"]["documents_processed"] == 1
+
+
+async def test_incremental_upload_rebuilds_only_new_document(
+    project_with_parsed_docs,
+    mock_vector_repo,
+    mock_embedding_service,
+):
+    """Uploading one parsed document after a healthy baseline triggers a 1-document incremental rebuild."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+    assert all(doc["status"] == "indexed" for doc in baseline_docs)
+
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+    mock_vector_repo.create_collection.reset_mock()
+    mock_vector_repo.delete_collection.reset_mock()
+    mock_embedding_service.embed_texts.reset_mock()
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[("files", ("fresh.txt", b"new incremental document " * 50, "text/plain"))],
+    )
+    assert upload_resp.status_code == 202
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["index_status"] == "stale"
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(baseline_docs) + 1 and any(d["status"] == "parsed" for d in items),
+    )
+    new_doc = next(doc for doc in docs if doc["id"] not in baseline_doc_ids)
+    old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+    assert new_doc["status"] == "parsed"
+    assert all(doc["status"] == "indexed" for doc in old_docs)
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == 1
+    assert final_status["job"]["documents_processed"] == 1
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: all(doc["status"] == "indexed" for doc in items),
+    )
+    new_doc = next(doc for doc in docs if doc["id"] not in baseline_doc_ids)
+    old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+    assert new_doc["status"] == "indexed"
+    assert all(doc["status"] == "indexed" for doc in old_docs)
+    assert not mock_vector_repo.delete_collection.called
+    assert not mock_vector_repo.create_collection.called
+    assert mock_embedding_service.embed_texts.call_count == 1
+
+
+async def test_delete_parsed_document_restores_indexed_project(project_with_parsed_docs, mock_vector_repo):
+    """Deleting the only newly parsed document should restore a previously indexed project to indexed."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[("files", ("delete-me.txt", b"temporary parsed content " * 40, "text/plain"))],
+    )
+    assert upload_resp.status_code == 202
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(baseline_docs) + 1 and any(d["status"] == "parsed" for d in items),
+    )
+    new_doc = next(doc for doc in docs if doc["id"] not in baseline_doc_ids)
+
+    delete_resp = await client.delete(f"/api/v1/projects/{project_id}/documents/{new_doc['id']}")
+    assert delete_resp.status_code == 204
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: {doc["id"] for doc in items} == baseline_doc_ids,
+    )
+    assert all(doc["status"] == "indexed" for doc in docs)
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["index_status"] == "indexed"
+
+
+async def test_delete_indexed_document_keeps_project_consistent(project_with_parsed_docs, mock_vector_repo):
+    """Deleting an indexed document removes its embeddings without making the remaining project stale."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    docs = await _list_documents(client, project_id)
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in docs)
+    mock_vector_repo.delete_document_embeddings.reset_mock()
+
+    victim = docs[0]
+    delete_resp = await client.delete(f"/api/v1/projects/{project_id}/documents/{victim['id']}")
+    assert delete_resp.status_code == 204
+
+    remaining_docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(docs) - 1,
+    )
+    assert all(doc["id"] != victim["id"] for doc in remaining_docs)
+    assert all(doc["status"] == "indexed" for doc in remaining_docs)
+    mock_vector_repo.delete_document_embeddings.assert_called_once()
+    call_args = mock_vector_repo.delete_document_embeddings.call_args[0]
+    assert str(call_args[0]) == project_id
+    assert str(call_args[1]) == victim["id"]
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["index_status"] == "indexed"
+
+
+async def test_settings_change_forces_full_rebuild(project_with_parsed_docs, mock_vector_repo):
+    """Changing chunk settings should mark indexed docs for reindex and the next build should be full."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+    mock_vector_repo.create_collection.reset_mock()
+    mock_vector_repo.delete_collection.reset_mock()
+
+    settings_resp = await client.put("/api/v1/settings", json={"chunk_size": 1800})
+    assert settings_resp.status_code == 200
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: all(doc["status"] == "reindex_required" for doc in items),
+    )
+    assert len(docs) == len(baseline_docs)
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["index_status"] == "stale"
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == len(baseline_docs)
+    mock_vector_repo.delete_collection.assert_called()
+    mock_vector_repo.create_collection.assert_called()
+
+
+async def test_settings_change_during_active_incremental_index_ends_stale(
+    project_with_parsed_docs,
+    mock_vector_repo,
+):
+    """If indexing settings change during an active build, the finished project should remain stale."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[("files", ("drift.txt", b"settings drift content " * 60, "text/plain"))],
+    )
+    assert upload_resp.status_code == 202
+    await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(baseline_docs) + 1 and any(d["id"] not in baseline_doc_ids and d["status"] == "parsed" for d in items),
+    )
+
+    from unittest.mock import AsyncMock
+
+    original_embed = client._transport.app.state.embedding_service.embed_texts  # type: ignore[union-attr]
+
+    async def slow_embed(texts, model):
+        await asyncio.sleep(0.3)
+        return [[0.1] * 384 for _ in texts]
+
+    client._transport.app.state.embedding_service.embed_texts = AsyncMock(side_effect=slow_embed)  # type: ignore[union-attr]
+
+    try:
+        build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+        assert build_resp.status_code == 202
+        await _wait_for_job_running(client, project_id)
+        await _wait_for_documents(
+            client,
+            project_id,
+            lambda items: any(
+                d["id"] not in baseline_doc_ids and d["status"] == "indexing"
+                for d in items
+            ),
+        )
+
+        settings_resp = await client.put("/api/v1/settings", json={"chunk_overlap": 123})
+        assert settings_resp.status_code == 200
+
+        terminal = await _wait_for_job_terminal_state(client, project_id)
+        assert terminal["job"]["status"] == "completed"
+
+        status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert status_resp.status_code == 200
+        assert status_resp.json()["index_status"] == "stale"
+    finally:
+        client._transport.app.state.embedding_service.embed_texts = original_embed  # type: ignore[union-attr]
+
+
+async def test_incremental_cancel_keeps_previously_indexed_documents(
+    project_with_parsed_docs,
+    mock_vector_repo,
+):
+    """Cancelling an incremental rebuild must not downgrade previously indexed documents."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[("files", ("cancel-me.txt", b"cancel scenario content " * 60, "text/plain"))],
+    )
+    assert upload_resp.status_code == 202
+    await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(baseline_docs) + 1 and any(d["id"] not in baseline_doc_ids and d["status"] == "parsed" for d in items),
+    )
+
+    from unittest.mock import AsyncMock
+
+    original_embed = client._transport.app.state.embedding_service.embed_texts  # type: ignore[union-attr]
+
+    async def slow_embed(texts, model):
+        await asyncio.sleep(0.3)
+        return [[0.1] * 384 for _ in texts]
+
+    client._transport.app.state.embedding_service.embed_texts = AsyncMock(side_effect=slow_embed)  # type: ignore[union-attr]
+
+    try:
+        build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+        assert build_resp.status_code == 202
+        running = await _wait_for_job_running(client, project_id)
+        assert running["job"]["documents_total"] == 1
+
+        cancel_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/cancel")
+        assert cancel_resp.status_code == 200
+        assert cancel_resp.json()["status"] == "cancelled"
+
+        terminal = await _wait_for_job_terminal_state(client, project_id)
+        assert terminal["job"]["status"] == "cancelled"
+
+        docs = await _list_documents(client, project_id)
+        old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+        new_doc = next(doc for doc in docs if doc["id"] not in baseline_doc_ids)
+        assert all(doc["status"] == "indexed" for doc in old_docs)
+        assert new_doc["status"] in {"parsed", "stale"}
+
+        status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert status_resp.status_code == 200
+        assert status_resp.json()["index_status"] == "stale"
+    finally:
+        client._transport.app.state.embedding_service.embed_texts = original_embed  # type: ignore[union-attr]
+
+
+async def test_trigger_build_detects_missing_collection_and_rebuilds_indexed_documents(
+    project_with_parsed_docs,
+    mock_vector_repo,
+):
+    """A project marked indexed in SQLite should still be rebuildable when the vector collection is missing."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    docs = await _list_documents(client, project_id)
+    mock_vector_repo.collection_exists.return_value = False
+    mock_vector_repo.collection_count.return_value = 0
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == len(docs)

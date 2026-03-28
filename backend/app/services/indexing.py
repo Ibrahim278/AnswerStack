@@ -3,6 +3,7 @@
 import asyncio
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
 import structlog
@@ -11,10 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.core.hashing import compute_chunk_params_hash
-from app.models.document import Document, DocumentStatus
+
+from app.chunking.splitter import RecursiveTextSplitter
+from app.models.document import Chunk, Document, DocumentStatus
 from app.models.indexing_job import IndexingJob, IndexingJobStatus
 from app.models.project import Project
-from app.repositories.document import DocumentRepository
+from app.parsers import get_parser_for_extension
+from app.repositories.document import ChunkRepository, DocumentRepository
 from app.repositories.indexing_job import IndexingJobRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.settings import SettingsRepository
@@ -30,6 +34,147 @@ _INDEXABLE_STATUSES = (
     DocumentStatus.STALE,
     DocumentStatus.REINDEX_REQUIRED,
 )
+_INCREMENTAL_INDEXABLE_STATUSES = (
+    DocumentStatus.PARSED,
+    DocumentStatus.STALE,
+)
+
+
+def _document_hash_mismatch(doc: Document, current_hash: str) -> bool:
+    return bool(doc.chunk_params_hash and doc.chunk_params_hash != current_hash)
+
+
+def _document_requires_rechunk(doc: Document, current_hash: str) -> bool:
+    if not doc.chunks:
+        return True
+    if doc.chunk_params_hash is None:
+        return False
+    return doc.chunk_params_hash != current_hash
+
+
+def _settings_change_requires_full_rebuild(
+    documents: list[Document],
+    current_hash: str,
+) -> bool:
+    for doc in documents:
+        if doc.status == DocumentStatus.REINDEX_REQUIRED:
+            return True
+        if _document_hash_mismatch(doc, current_hash):
+            return True
+    return False
+
+
+def _select_documents_for_run(
+    documents: list[Document],
+    *,
+    full_rebuild: bool,
+) -> list[Document]:
+    allowed_statuses = (
+        _INDEXABLE_STATUSES if full_rebuild else _INCREMENTAL_INDEXABLE_STATUSES
+    )
+    return [doc for doc in documents if doc.status in allowed_statuses]
+
+
+async def _compute_project_index_status(
+    doc_repo: DocumentRepository,
+    project_repo: ProjectRepository,
+    settings_repo: SettingsRepository,
+    project_id: UUID,
+) -> str:
+    settings = await settings_repo.get()
+    current_hash = compute_chunk_params_hash(
+        settings.chunk_size, settings.chunk_overlap, settings.embedding_model
+    )
+
+    project = await project_repo.get_by_id(project_id)
+    if project is None:
+        return "not_indexed"
+
+    documents = await _get_all_project_documents(doc_repo, project_id)
+    if not documents:
+        return "not_indexed"
+
+    stale_statuses = (
+        DocumentStatus.PARSED,
+        DocumentStatus.STALE,
+        DocumentStatus.REINDEX_REQUIRED,
+        DocumentStatus.UPLOADED,
+        DocumentStatus.PARSING,
+        DocumentStatus.INDEXING,
+    )
+    has_indexed_document = False
+    for doc in documents:
+        if doc.status in stale_statuses:
+            return "stale"
+        if doc.chunk_params_hash and doc.chunk_params_hash != current_hash:
+            return "stale"
+        if doc.status == DocumentStatus.INDEXED:
+            has_indexed_document = True
+
+    return "indexed" if has_indexed_document else "not_indexed"
+
+
+async def _cleanup_cancelled_run(
+    *,
+    session: AsyncSession,
+    doc_repo: DocumentRepository,
+    project_repo: ProjectRepository,
+    settings_repo: SettingsRepository,
+    vector_repo: VectorRepository,
+    project_id: UUID,
+    had_previous_index: bool,
+    full_rebuild: bool,
+    settings_changed_rebuild: bool,
+    collection_rebuilt: bool,
+    current_document_id: UUID | None,
+) -> None:
+    """Clean up partial state left behind by a cancelled indexing run."""
+    if full_rebuild and collection_rebuilt:
+        await asyncio.to_thread(vector_repo.delete_collection, project_id)
+
+    if full_rebuild:
+        fallback_status = (
+            DocumentStatus.REINDEX_REQUIRED
+            if settings_changed_rebuild and had_previous_index
+            else (DocumentStatus.STALE if had_previous_index else DocumentStatus.PARSED)
+        )
+        await doc_repo.bulk_update_project_statuses(
+            project_id,
+            (DocumentStatus.INDEXING, DocumentStatus.INDEXED),
+            fallback_status,
+        )
+    else:
+        if current_document_id is not None:
+            await asyncio.to_thread(
+                vector_repo.delete_document_embeddings,
+                project_id,
+                current_document_id,
+            )
+        fallback_status = (
+            DocumentStatus.STALE if had_previous_index else DocumentStatus.PARSED
+        )
+        await doc_repo.bulk_update_project_statuses(
+            project_id,
+            (DocumentStatus.INDEXING,),
+            fallback_status,
+        )
+
+    next_index_status = await _compute_project_index_status(
+        doc_repo,
+        project_repo,
+        settings_repo,
+        project_id,
+    )
+    await project_repo.update(project_id, index_status=next_index_status)
+    await session.commit()
+
+
+async def _cancel_requested(
+    job_repo: IndexingJobRepository,
+    job_id: UUID,
+) -> bool:
+    refreshed_job = await job_repo.get_by_id(job_id)
+    return bool(refreshed_job and refreshed_job.status == IndexingJobStatus.CANCELLED)
 
 
 class IndexingService:
@@ -41,11 +186,13 @@ class IndexingService:
         document_repo: DocumentRepository,
         project_repo: ProjectRepository,
         settings_repo: SettingsRepository,
+        vector_repo: VectorRepository,
     ):
         self._job_repo = job_repo
         self._document_repo = document_repo
         self._project_repo = project_repo
         self._settings_repo = settings_repo
+        self._vector_repo = vector_repo
 
     async def trigger_build(self, project_id: UUID) -> IndexingJob:
         """Create a new indexing job for the project.
@@ -64,7 +211,7 @@ class IndexingService:
                 "An indexing job is already active (pending or running) for this project.",
             )
 
-        documents = await self._get_indexable_documents(project_id)
+        documents = await self._get_documents_for_job(project_id)
         if not documents:
             raise AppError(
                 error_code="indexing.no_documents",
@@ -114,7 +261,30 @@ class IndexingService:
         )
 
         project = await self._project_repo.get_by_id(project_id)
-        new_status = "stale" if project and project.last_indexed_at else "not_indexed"
+        had_previous_index = bool(project and project.last_indexed_at)
+        full_rebuild = await self._settings_change_requires_full_rebuild(project_id)
+        fallback_status = (
+            DocumentStatus.REINDEX_REQUIRED
+            if full_rebuild and had_previous_index
+            else (DocumentStatus.STALE if had_previous_index else DocumentStatus.PARSED)
+        )
+        from_statuses = (
+            (DocumentStatus.INDEXING, DocumentStatus.INDEXED)
+            if full_rebuild
+            and (active.documents_processed > 0 or active.current_document_id is not None)
+            else (DocumentStatus.INDEXING,)
+        )
+        await self._document_repo.bulk_update_project_statuses(
+            project_id,
+            from_statuses,
+            fallback_status,
+        )
+        new_status = await _compute_project_index_status(
+            self._document_repo,
+            self._project_repo,
+            self._settings_repo,
+            project_id,
+        )
         await self._project_repo.update(project_id, index_status=new_status)
 
         return updated  # type: ignore[return-value]
@@ -132,7 +302,7 @@ class IndexingService:
                 status_code=400,
             )
 
-        documents = await self._get_indexable_documents(project_id)
+        documents = await self._get_documents_for_job(project_id)
         if not documents:
             raise AppError(
                 error_code="indexing.no_documents",
@@ -152,29 +322,12 @@ class IndexingService:
 
     async def compute_stale_status(self, project_id: UUID) -> str:
         """Compute whether the project's index is current, stale, or absent."""
-        settings = await self._settings_repo.get()
-        current_hash = compute_chunk_params_hash(
-            settings.chunk_size, settings.chunk_overlap, settings.embedding_model
+        return await _compute_project_index_status(
+            self._document_repo,
+            self._project_repo,
+            self._settings_repo,
+            project_id,
         )
-
-        project = await self._project_repo.get_by_id(project_id)
-        if project is None or project.last_indexed_at is None:
-            return "not_indexed"
-
-        documents = await _get_all_project_documents(self._document_repo, project_id)
-        stale_statuses = (
-            DocumentStatus.PARSED,
-            DocumentStatus.STALE,
-            DocumentStatus.REINDEX_REQUIRED,
-            DocumentStatus.UPLOADED,
-        )
-        for doc in documents:
-            if doc.status in stale_statuses:
-                return "stale"
-            if doc.chunk_params_hash and doc.chunk_params_hash != current_hash:
-                return "stale"
-
-        return "indexed"
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -185,6 +338,45 @@ class IndexingService:
         return await _get_all_project_documents(
             self._document_repo, project_id, statuses=_INDEXABLE_STATUSES
         )
+
+    async def _settings_change_requires_full_rebuild(self, project_id: UUID) -> bool:
+        settings = await self._settings_repo.get()
+        current_hash = compute_chunk_params_hash(
+            settings.chunk_size, settings.chunk_overlap, settings.embedding_model
+        )
+        documents = await _get_all_project_documents(self._document_repo, project_id)
+        return _settings_change_requires_full_rebuild(documents, current_hash)
+
+    async def _get_documents_for_job(self, project_id: UUID) -> list[Document]:
+        settings = await self._settings_repo.get()
+        current_hash = compute_chunk_params_hash(
+            settings.chunk_size, settings.chunk_overlap, settings.embedding_model
+        )
+        documents = await _get_all_project_documents(self._document_repo, project_id)
+        full_rebuild = _settings_change_requires_full_rebuild(documents, current_hash)
+        selected = _select_documents_for_run(documents, full_rebuild=full_rebuild)
+        if selected:
+            return selected
+
+        indexed_documents = [
+            doc for doc in documents if doc.status == DocumentStatus.INDEXED
+        ]
+        if not indexed_documents:
+            return []
+
+        collection_exists = await asyncio.to_thread(
+            self._vector_repo.collection_exists,
+            project_id,
+        )
+        collection_count = (
+            await asyncio.to_thread(self._vector_repo.collection_count, project_id)
+            if collection_exists
+            else 0
+        )
+        if not collection_exists or collection_count == 0:
+            return indexed_documents
+
+        return []
 
 
 # ------------------------------------------------------------------
@@ -227,6 +419,63 @@ async def _get_all_project_documents(
     return all_docs
 
 
+async def _reparse_document(
+    session: AsyncSession,
+    doc: Document,
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[Chunk]:
+    """Re-parse a document from disk and create new chunks.
+
+    Used during indexing when chunks are missing (e.g. after settings change).
+    """
+    from app.core.config import Settings as AppSettings
+
+    app_settings = AppSettings()
+    base_dir = Path(app_settings.document_storage_path)
+    file_path = base_dir / str(doc.project_id) / str(doc.id) / doc.filename
+
+    # Try with dashes in UUID if plain hex path doesn't exist
+    if not file_path.exists():
+        import uuid as _uuid
+        pid_str = str(_uuid.UUID(str(doc.project_id)))
+        did_str = str(_uuid.UUID(str(doc.id)))
+        file_path = base_dir / pid_str / did_str / doc.filename
+
+    if not file_path.exists():
+        logger.warning("Document file not found", path=str(file_path), doc_id=str(doc.id))
+        return []
+
+    loop = asyncio.get_running_loop()
+    content = await loop.run_in_executor(None, file_path.read_bytes)
+
+    parser = get_parser_for_extension(file_path.suffix)
+    result = await loop.run_in_executor(None, parser.parse, content, doc.filename)
+
+    splitter = RecursiveTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks_text = await loop.run_in_executor(None, splitter.split, result.text)
+
+    chunk_repo = ChunkRepository(session)
+    await chunk_repo.delete_by_document(doc.id)
+
+    chunk_entities = []
+    for i, text in enumerate(chunks_text):
+        chunk = Chunk(
+            document_id=doc.id,
+            content=text,
+            position=i,
+            char_count=len(text),
+            page_number=None,
+        )
+        chunk_entities.append(chunk)
+        session.add(chunk)
+
+    doc.chunk_count = len(chunk_entities)
+    await session.flush()
+    logger.info("Re-parsed document", doc_id=str(doc.id), chunks=len(chunk_entities))
+    return chunk_entities
+
+
 # ------------------------------------------------------------------
 # Background job runner (module-level async function)
 # ------------------------------------------------------------------
@@ -257,6 +506,9 @@ async def run_indexing_job(
             doc_repo = SQLAlchemyDocumentRepository(session)
             project_repo = SQLAlchemyProjectRepository(session)
             settings_repo = SQLAlchemySettingsRepository(session)
+            project = await project_repo.get_by_id(project_id)
+            had_previous_index = bool(project and project.last_indexed_at)
+            collection_rebuilt = False
 
             # Mark job as running
             await job_repo.update_status(job_id, IndexingJobStatus.RUNNING)
@@ -269,32 +521,63 @@ async def run_indexing_job(
                 settings.chunk_size, settings.chunk_overlap, embedding_model
             )
 
-            # Gather indexable documents
-            documents = await _get_all_project_documents(
-                doc_repo, project_id, statuses=_INDEXABLE_STATUSES
+            all_documents = await _get_all_project_documents(doc_repo, project_id)
+            settings_changed_rebuild = _settings_change_requires_full_rebuild(
+                all_documents,
+                current_chunk_params_hash,
+            )
+            has_indexed_documents = any(
+                doc.status == DocumentStatus.INDEXED for doc in all_documents
+            )
+            collection_exists = await asyncio.to_thread(
+                vector_repo.collection_exists, project_id
+            )
+            collection_count = (
+                await asyncio.to_thread(vector_repo.collection_count, project_id)
+                if collection_exists
+                else 0
+            )
+            missing_collection_rebuild = has_indexed_documents and (
+                not collection_exists or collection_count == 0
+            )
+            full_rebuild = settings_changed_rebuild or missing_collection_rebuild
+            collection_rebuilt = full_rebuild
+            documents = _select_documents_for_run(
+                all_documents,
+                full_rebuild=full_rebuild,
             )
             total_docs = len(documents)
 
             # Check for cancellation BEFORE destroying the existing collection
-            refreshed_job = await job_repo.get_by_id(job_id)
-            if refreshed_job and refreshed_job.status == IndexingJobStatus.CANCELLED:
+            if await _cancel_requested(job_repo, job_id):
                 log.info(
                     "Indexing job cancelled before collection rebuild",
                     job_id=str(job_id),
                 )
                 return
 
-            # Full rebuild: delete and re-create collection
-            await asyncio.to_thread(vector_repo.delete_collection, project_id)
-            await asyncio.to_thread(vector_repo.create_collection, project_id)
+            if full_rebuild:
+                await asyncio.to_thread(vector_repo.delete_collection, project_id)
+                await asyncio.to_thread(vector_repo.create_collection, project_id)
+            elif not collection_exists:
+                await asyncio.to_thread(vector_repo.create_collection, project_id)
 
             for i, doc in enumerate(documents):
                 # Cooperative cancellation check
-                refreshed_job = await job_repo.get_by_id(job_id)
-                if refreshed_job and refreshed_job.status == IndexingJobStatus.CANCELLED:
-                    # Reset any documents already marked INDEXING in this run
-                    await doc_repo.reset_indexing_documents(project_id)
-                    await session.commit()
+                if await _cancel_requested(job_repo, job_id):
+                    await _cleanup_cancelled_run(
+                        session=session,
+                        doc_repo=doc_repo,
+                        project_repo=project_repo,
+                        settings_repo=settings_repo,
+                        vector_repo=vector_repo,
+                        project_id=project_id,
+                        had_previous_index=had_previous_index,
+                        full_rebuild=full_rebuild,
+                        settings_changed_rebuild=settings_changed_rebuild,
+                        collection_rebuilt=collection_rebuilt,
+                        current_document_id=None,
+                    )
                     log.info(
                         "Indexing job cancelled cooperatively",
                         job_id=str(job_id),
@@ -308,12 +591,41 @@ async def run_indexing_job(
 
                 # Get chunks via the eager-loaded relationship
                 chunks = doc.chunks
-                if not chunks:
-                    # No chunks — mark as indexed with 0 embeddings
-                    await doc_repo.update_status(doc.id, DocumentStatus.INDEXED)
-                    await job_repo.update_progress(job_id, i + 1, total_docs, doc.id)
-                    await session.commit()
-                    continue
+                if _document_requires_rechunk(doc, current_chunk_params_hash):
+                    log.info(
+                        "Refreshing document chunks",
+                        doc_id=str(doc.id),
+                        filename=doc.filename,
+                    )
+                    chunks = await _reparse_document(
+                        session, doc, settings.chunk_size, settings.chunk_overlap
+                    )
+                    if not chunks:
+                        log.warning("Re-parse produced no chunks", doc_id=str(doc.id))
+                        if await _cancel_requested(job_repo, job_id):
+                            await _cleanup_cancelled_run(
+                                session=session,
+                                doc_repo=doc_repo,
+                                project_repo=project_repo,
+                                settings_repo=settings_repo,
+                                vector_repo=vector_repo,
+                                project_id=project_id,
+                                had_previous_index=had_previous_index,
+                                full_rebuild=full_rebuild,
+                                settings_changed_rebuild=settings_changed_rebuild,
+                                collection_rebuilt=collection_rebuilt,
+                                current_document_id=doc.id,
+                            )
+                            log.info(
+                                "Indexing job cancelled after re-parse",
+                                job_id=str(job_id),
+                                documents_processed=i,
+                            )
+                            return
+                        await doc_repo.update_status(doc.id, DocumentStatus.INDEXED)
+                        await job_repo.update_progress(job_id, i + 1, total_docs, doc.id)
+                        await session.commit()
+                        continue
 
                 texts = [chunk.content for chunk in chunks]
                 chunk_ids = [str(chunk.id) for chunk in chunks]
@@ -327,8 +639,35 @@ async def run_indexing_job(
                     for chunk in chunks
                 ]
 
+                if not collection_rebuilt:
+                    await asyncio.to_thread(
+                        vector_repo.delete_document_embeddings,
+                        project_id,
+                        doc.id,
+                    )
+
                 # Embed
                 embeddings = await embedding_service.embed_texts(texts, embedding_model)
+                if await _cancel_requested(job_repo, job_id):
+                    await _cleanup_cancelled_run(
+                        session=session,
+                        doc_repo=doc_repo,
+                        project_repo=project_repo,
+                        settings_repo=settings_repo,
+                        vector_repo=vector_repo,
+                        project_id=project_id,
+                        had_previous_index=had_previous_index,
+                        full_rebuild=full_rebuild,
+                        settings_changed_rebuild=settings_changed_rebuild,
+                        collection_rebuilt=collection_rebuilt,
+                        current_document_id=doc.id,
+                    )
+                    log.info(
+                        "Indexing job cancelled after embedding",
+                        job_id=str(job_id),
+                        documents_processed=i,
+                    )
+                    return
 
                 # Upsert into vector store
                 await asyncio.to_thread(
@@ -339,6 +678,26 @@ async def run_indexing_job(
                     texts,
                     metadatas,
                 )
+                if await _cancel_requested(job_repo, job_id):
+                    await _cleanup_cancelled_run(
+                        session=session,
+                        doc_repo=doc_repo,
+                        project_repo=project_repo,
+                        settings_repo=settings_repo,
+                        vector_repo=vector_repo,
+                        project_id=project_id,
+                        had_previous_index=had_previous_index,
+                        full_rebuild=full_rebuild,
+                        settings_changed_rebuild=settings_changed_rebuild,
+                        collection_rebuilt=collection_rebuilt,
+                        current_document_id=doc.id,
+                    )
+                    log.info(
+                        "Indexing job cancelled after vector upsert",
+                        job_id=str(job_id),
+                        documents_processed=i,
+                    )
+                    return
 
                 # Update document metadata
                 doc.status = DocumentStatus.INDEXED
@@ -352,15 +711,21 @@ async def run_indexing_job(
 
             # Re-check settings to detect if they changed during the run.
             # If the hash differs, the freshly built index is already stale.
+            session.expire_all()
             current_settings = await settings_repo.get()
             final_hash = compute_chunk_params_hash(
                 current_settings.chunk_size,
                 current_settings.chunk_overlap,
                 current_settings.embedding_model,
             )
-            final_index_status = (
-                "stale" if final_hash != current_chunk_params_hash else "indexed"
+            final_index_status = await _compute_project_index_status(
+                doc_repo,
+                project_repo,
+                settings_repo,
+                project_id,
             )
+            if final_hash != current_chunk_params_hash:
+                final_index_status = "stale"
 
             # Mark job completed
             await job_repo.update_status(job_id, IndexingJobStatus.COMPLETED)

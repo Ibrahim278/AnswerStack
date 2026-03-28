@@ -13,6 +13,7 @@ from app.core.security import compute_bytes_hash, sanitize_filename, validate_st
 from app.models.document import Chunk, Document, DocumentStatus
 from app.parsers import get_parser_for_extension
 from app.repositories.document import DocumentRepository
+from app.repositories.project import ProjectRepository
 from app.schemas.document import DocumentResponse, DocumentUploadResult, RejectedFile
 from app.schemas.pagination import PaginatedResponse, encode_cursor
 
@@ -30,9 +31,15 @@ class FileData(NamedTuple):
 
 
 class DocumentService:
-    def __init__(self, repo: DocumentRepository, settings: Settings):
+    def __init__(
+        self,
+        repo: DocumentRepository,
+        settings: Settings,
+        project_repo: ProjectRepository,
+    ):
         self._repo = repo
         self._settings = settings
+        self._project_repo = project_repo
 
     async def upload_documents(
         self,
@@ -148,6 +155,12 @@ class DocumentService:
         # Commit all document records to the DB so that background tasks
         # (which open their own sessions) can see the rows.
         await self._repo.commit()
+
+        if uploaded_docs:
+            project = await self._project_repo.get_by_id(project_id)
+            if project is not None and project.last_indexed_at is not None:
+                await self._project_repo.update(project_id, index_status="stale")
+                await self._repo.commit()
 
         # Schedule background parsing AFTER the commit
         for doc_id, storage_path in _pending_parse:

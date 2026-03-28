@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from statistics import mean, pstdev
 from typing import Any
 from uuid import UUID
 
@@ -31,7 +32,11 @@ class RetrievalService:
     """Two-stage retrieval: vector similarity search followed by FlashRank reranking.
 
     Stage 1: Embed the query, perform cosine similarity search (top-N candidates).
-    Stage 2: Rerank candidates with FlashRank cross-encoder, filter by threshold.
+              Filter by similarity_threshold (the only quality gate).
+    Stage 2: Rerank surviving candidates with FlashRank cross-encoder for ordering.
+              No reranker threshold — top-k by reranker order.
+              Collapse detection: if reranker scores are uniformly near-zero,
+              fall back to vector-ranked results.
 
     The service has no SQLAlchemy imports -- all data access flows through
     VectorRepository and EmbeddingService interfaces.
@@ -60,9 +65,9 @@ class RetrievalService:
         """Execute the two-stage retrieval pipeline.
 
         1. Embed query and perform vector similarity search (initial_k candidates).
-        2. If reranker enabled and available, rerank with FlashRank then threshold-filter.
-           Otherwise, convert cosine distances to similarities and threshold-filter.
-        3. Return top_k chunks that pass the similarity_threshold.
+        2. Filter by cosine similarity_threshold (the only hard quality gate).
+        3. If reranker enabled, rerank for ordering. Return top_k.
+           On reranker collapse, fall back to vector-ranked order.
 
         Returns an empty list when no sources pass the threshold -- the caller
         handles the no-context case.
@@ -81,24 +86,77 @@ class RetrievalService:
             logger.debug("No vector results for query", project_id=str(project_id))
             return []
 
-        # Stage 2: Reranking or fallback similarity scoring
+        # Filter by cosine similarity threshold (the only quality gate)
+        filtered = self._filter_by_similarity(raw_results, similarity_threshold)
+
+        if not filtered["ids"]:
+            logger.info(
+                "No vector results passed similarity threshold",
+                query=query[:80],
+                threshold=similarity_threshold,
+                candidates=len(raw_results["ids"]),
+                best_similarity=round(1.0 - min(raw_results["distances"]), 4),
+            )
+            return []
+
+        logger.info(
+            "Vector filtering complete",
+            query=query[:80],
+            candidates=len(raw_results["ids"]),
+            passed=len(filtered["ids"]),
+            threshold=similarity_threshold,
+        )
+
+        # Stage 2: Reranking for ordering, or vector-ranked fallback
         if reranker_enabled and self._ranker is not None:
-            return await self._rerank_results(raw_results, query, top_k, similarity_threshold)
-        else:
-            return self._fallback_similarity(raw_results, top_k, similarity_threshold)
+            reranked = await self._rerank_results(filtered, query, top_k)
+            if reranked:
+                return reranked
+            # Reranker collapsed — fall back to vector similarity ordering
+            logger.info(
+                "Falling back to vector-ranked results",
+                query=query[:80],
+            )
+        return self._vector_ranked(filtered, top_k)
+
+    def _filter_by_similarity(
+        self,
+        raw_results: dict,
+        similarity_threshold: float,
+    ) -> dict:
+        """Filter vector results by cosine similarity threshold.
+
+        ChromaDB cosine distance is converted to similarity via 1.0 - distance.
+        Original vector order is preserved.
+        """
+        qualified = [
+            i
+            for i, distance in enumerate(raw_results["distances"])
+            if (1.0 - distance) >= similarity_threshold
+        ]
+        return {
+            "ids": [raw_results["ids"][i] for i in qualified],
+            "documents": [raw_results["documents"][i] for i in qualified],
+            "metadatas": [raw_results["metadatas"][i] for i in qualified],
+            "distances": [raw_results["distances"][i] for i in qualified],
+        }
 
     async def _rerank_results(
         self,
-        raw_results: dict,
+        filtered_results: dict,
         query: str,
         top_k: int,
-        similarity_threshold: float,
     ) -> list[RetrievedChunk]:
-        """Stage 2a: Rerank with FlashRank cross-encoder."""
+        """Stage 2: Rerank with FlashRank cross-encoder for ordering.
+
+        No score threshold — returns top_k by reranker order.
+        Detects reranker collapse (all scores near zero) and returns empty
+        so the caller can fall back to vector ordering.
+        """
         passages = [
             {"id": i, "text": doc, "meta": meta}
             for i, (doc, meta) in enumerate(
-                zip(raw_results["documents"], raw_results["metadatas"])
+                zip(filtered_results["documents"], filtered_results["metadatas"])
             )
         ]
 
@@ -107,67 +165,95 @@ class RetrievalService:
             RerankRequest(query=query, passages=passages),
         )
 
+        if not reranked:
+            logger.warning("Reranker returned no results", query=query[:80])
+            return []
+
+        # Observability: log reranker score distribution
+        scores = [float(result["score"]) for result in reranked]
+        max_score = max(scores)
+        min_score = min(scores)
+        mean_score = mean(scores)
+        stddev_score = pstdev(scores)
+
+        logger.info(
+            "Reranker stats",
+            query=query[:80],
+            candidates=len(reranked),
+            max_score=round(max_score, 6),
+            min_score=round(min_score, 6),
+            mean_score=round(mean_score, 6),
+            stddev_score=round(stddev_score, 6),
+        )
+
+        # Collapse detection: if all scores are near-zero with no variance,
+        # the reranker failed to meaningfully differentiate — fall back
+        if max_score < 0.01 and stddev_score < 1e-4:
+            logger.warning(
+                "Reranker collapse detected",
+                query=query[:80],
+                max_score=round(max_score, 6),
+                stddev_score=round(stddev_score, 6),
+            )
+            return []
+
+        # Return top_k by reranker order (no score threshold)
         chunks: list[RetrievedChunk] = []
-        for result in reranked:
-            score = result["score"]
-            if score < similarity_threshold:
-                continue
+        for result in reranked[:top_k]:
             original_idx = result["id"]
             chunks.append(
                 RetrievedChunk(
-                    chunk_id=raw_results["ids"][original_idx],
+                    chunk_id=filtered_results["ids"][original_idx],
                     document_name=result["meta"].get("document_name", "Unknown"),
                     chunk_text=result["text"],
                     page_number=result["meta"].get("page_number"),
-                    relevance_score=score,
+                    relevance_score=float(result["score"]),
                 )
             )
-            if len(chunks) >= top_k:
-                break
 
-        logger.debug(
+        logger.info(
             "Reranked retrieval complete",
-            candidates=len(raw_results["ids"]),
+            query=query[:80],
+            candidates=len(reranked),
             returned=len(chunks),
         )
         return chunks
 
-    def _fallback_similarity(
+    def _vector_ranked(
         self,
-        raw_results: dict,
+        filtered_results: dict,
         top_k: int,
-        similarity_threshold: float,
     ) -> list[RetrievedChunk]:
-        """Stage 2b: Fallback without reranker -- use cosine distance conversion."""
+        """Return top_k chunks ordered by vector cosine similarity."""
         scored: list[tuple[int, float]] = []
-        for i, distance in enumerate(raw_results["distances"]):
-            similarity = 1.0 - distance
-            if similarity >= similarity_threshold:
-                scored.append((i, similarity))
+        for i, distance in enumerate(filtered_results["distances"]):
+            scored.append((i, 1.0 - distance))
 
-        # Sort by similarity descending
         scored.sort(key=lambda x: x[1], reverse=True)
         scored = scored[:top_k]
 
         chunks: list[RetrievedChunk] = []
         for idx, similarity in scored:
-            meta = raw_results["metadatas"][idx]
+            meta = filtered_results["metadatas"][idx]
             chunks.append(
                 RetrievedChunk(
-                    chunk_id=raw_results["ids"][idx],
+                    chunk_id=filtered_results["ids"][idx],
                     document_name=meta.get("document_name", "Unknown"),
-                    chunk_text=raw_results["documents"][idx],
+                    chunk_text=filtered_results["documents"][idx],
                     page_number=meta.get("page_number"),
                     relevance_score=similarity,
                 )
             )
 
-        logger.debug(
-            "Fallback retrieval complete",
-            candidates=len(raw_results["ids"]),
+        logger.info(
+            "Vector-ranked retrieval complete",
+            candidates=len(filtered_results["ids"]),
             returned=len(chunks),
         )
         return chunks
+
+    # Keep old method name for compatibility
+    _fallback_similarity = _vector_ranked
 
     @staticmethod
     def build_source_context(chunks: list[RetrievedChunk]) -> str:

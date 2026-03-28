@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # Document processing
-    chunk_size: int = 4000
-    chunk_overlap: int = 800
+    chunk_size: int = 2200
+    chunk_overlap: int = 250
     max_upload_size_mb: int = 50
     document_storage_path: str = "data/documents"
 

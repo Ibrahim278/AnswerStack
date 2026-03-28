@@ -25,6 +25,11 @@ class VectorRepository(ABC):
         ...
 
     @abstractmethod
+    def delete_document_embeddings(self, project_id: UUID, document_id: UUID) -> None:
+        """Delete all embeddings for a single document. Idempotent."""
+        ...
+
+    @abstractmethod
     def upsert_embeddings(
         self,
         project_id: UUID,
@@ -89,6 +94,23 @@ class ChromaDBVectorRepository(VectorRepository):
         except (ValueError, chromadb.errors.NotFoundError):
             # Collection doesn't exist — idempotent delete
             pass
+
+    def delete_document_embeddings(self, project_id: UUID, document_id: UUID) -> None:
+        try:
+            collection = self._client.get_collection(
+                name=self._collection_name(project_id),
+            )
+        except (ValueError, chromadb.errors.NotFoundError, Exception):
+            return
+
+        try:
+            collection.delete(where={"document_id": str(document_id)})
+        except Exception:
+            logger.warning(
+                "Failed to delete document embeddings",
+                project_id=str(project_id),
+                document_id=str(document_id),
+            )
 
     def upsert_embeddings(
         self,
