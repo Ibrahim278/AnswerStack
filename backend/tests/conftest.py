@@ -8,6 +8,7 @@ from uuid import UUID
 import pymupdf
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
@@ -29,6 +30,7 @@ async def async_engine():
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         echo=False,
+        poolclass=StaticPool,
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

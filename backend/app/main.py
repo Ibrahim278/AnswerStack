@@ -113,50 +113,24 @@ async def lifespan(app: FastAPI):
     # PENDING jobs -> FAILED (they never actually started).
     # INDEXING documents -> PARSED (so they are eligible for the next retry).
     try:
-        from datetime import datetime as _dt, timezone as _tz
+        from app.services.indexing import recover_orphaned_indexing_state
 
-        from sqlalchemy import update as sa_upd
-
-        from app.models.document import Document as _Document, DocumentStatus as _DocStatus
-        from app.models.indexing_job import IndexingJob as _IndexingJob, IndexingJobStatus as _JobStatus
-        from app.repositories.indexing_job import SQLAlchemyIndexingJobRepository
-
-        async with session_factory() as session:
-            job_repo = SQLAlchemyIndexingJobRepository(session)
-
-            # Mark RUNNING jobs as FAILED
-            orphaned_count = await job_repo.mark_orphaned_running_as_failed()
-
-            # Mark PENDING jobs as FAILED (they never started)
-            pending_result = await session.execute(
-                sa_upd(_IndexingJob)
-                .where(_IndexingJob.status == _JobStatus.PENDING)
-                .values(
-                    status=_JobStatus.FAILED,
-                    error_detail={
-                        "stage": "startup_recovery",
-                        "message": "Job interrupted by server restart (was pending)",
-                    },
-                    completed_at=_dt.now(_tz.utc),
-                )
+        recovery = await recover_orphaned_indexing_state(session_factory)
+        if recovery["orphaned_jobs"] > 0:
+            logger.warning(
+                "Recovered orphaned indexing jobs",
+                count=recovery["orphaned_jobs"],
             )
-            orphaned_count += pending_result.rowcount
-
-            # Reset documents stuck in INDEXING back to PARSED
-            reset_result = await session.execute(
-                sa_upd(_Document)
-                .where(_Document.status == _DocStatus.INDEXING)
-                .values(status=_DocStatus.PARSED)
+        if recovery["reset_documents"] > 0:
+            logger.warning(
+                "Reset stuck INDEXING documents at startup",
+                count=recovery["reset_documents"],
             )
-            stuck_docs = reset_result.rowcount
-
-            await session.commit()
-            if orphaned_count > 0:
-                logger.warning("Recovered orphaned indexing jobs", count=orphaned_count)
-            if stuck_docs > 0:
-                logger.warning(
-                    "Reset stuck INDEXING documents at startup", count=stuck_docs
-                )
+        if recovery["recomputed_projects"] > 0:
+            logger.info(
+                "Recomputed project indexing health at startup",
+                count=recovery["recomputed_projects"],
+            )
     except Exception as e:
         logger.warning("Failed to recover orphaned jobs at startup", error=str(e))
 

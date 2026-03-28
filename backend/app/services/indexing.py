@@ -476,6 +476,91 @@ async def _reparse_document(
     return chunk_entities
 
 
+async def recover_orphaned_indexing_state(
+    session_factory: async_sessionmaker,
+) -> dict[str, int]:
+    """Recover interrupted indexing state during startup or an equivalent restart path."""
+    from datetime import datetime as _dt, timezone as _tz
+
+    from sqlalchemy import select, update as sa_upd
+
+    from app.models.document import Document as _Document
+    from app.models.indexing_job import IndexingJob as _IndexingJob
+    from app.repositories.document import SQLAlchemyDocumentRepository
+    from app.repositories.indexing_job import SQLAlchemyIndexingJobRepository
+    from app.repositories.project import SQLAlchemyProjectRepository
+    from app.repositories.settings import SQLAlchemySettingsRepository
+
+    async with session_factory() as session:
+        job_repo = SQLAlchemyIndexingJobRepository(session)
+        doc_repo = SQLAlchemyDocumentRepository(session)
+        project_repo = SQLAlchemyProjectRepository(session)
+        settings_repo = SQLAlchemySettingsRepository(session)
+
+        orphaned_project_ids = set(
+            (
+                await session.execute(
+                    select(_IndexingJob.project_id).where(
+                        _IndexingJob.status.in_(
+                            [IndexingJobStatus.RUNNING, IndexingJobStatus.PENDING]
+                        )
+                    )
+                )
+            ).scalars()
+        )
+        orphaned_project_ids.update(
+            (
+                await session.execute(
+                    select(_Document.project_id).where(
+                        _Document.status == DocumentStatus.INDEXING
+                    )
+                )
+            ).scalars()
+        )
+
+        orphaned_count = await job_repo.mark_orphaned_running_as_failed()
+
+        pending_result = await session.execute(
+            sa_upd(_IndexingJob)
+            .where(_IndexingJob.status == IndexingJobStatus.PENDING)
+            .values(
+                status=IndexingJobStatus.FAILED,
+                error_detail={
+                    "stage": "startup_recovery",
+                    "message": "Job interrupted by server restart (was pending)",
+                },
+                completed_at=_dt.now(_tz.utc),
+            )
+        )
+        orphaned_count += pending_result.rowcount
+
+        reset_result = await session.execute(
+            sa_upd(_Document)
+            .where(_Document.status == DocumentStatus.INDEXING)
+            .values(status=DocumentStatus.PARSED)
+        )
+        stuck_docs = reset_result.rowcount
+
+        recomputed_projects = 0
+        for project_id in orphaned_project_ids:
+            next_status = await _compute_project_index_status(
+                doc_repo,
+                project_repo,
+                settings_repo,
+                project_id,
+            )
+            project = await project_repo.update(project_id, index_status=next_status)
+            if project is not None:
+                recomputed_projects += 1
+
+        await session.commit()
+        return {
+            "orphaned_jobs": orphaned_count,
+            "reset_documents": stuck_docs,
+            "recomputed_projects": recomputed_projects,
+        }
+
+
 # ------------------------------------------------------------------
 # Background job runner (module-level async function)
 # ------------------------------------------------------------------
@@ -728,11 +813,16 @@ async def run_indexing_job(
                 final_index_status = "stale"
 
             # Mark job completed
+            completed_at = datetime.now(timezone.utc)
             await job_repo.update_status(job_id, IndexingJobStatus.COMPLETED)
-            await project_repo.update(
-                project_id,
-                last_indexed_at=datetime.now(timezone.utc),
-                index_status=final_index_status,
+            await session.execute(
+                update(Project)
+                .where(Project.id == project_id)
+                .values(
+                    last_indexed_at=completed_at,
+                    index_status=final_index_status,
+                    updated_at=completed_at,
+                )
             )
             await session.commit()
 

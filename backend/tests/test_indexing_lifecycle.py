@@ -1,10 +1,18 @@
 """Integration tests for indexing lifecycle and baseline infrastructure behavior."""
 
 import asyncio
+from contextlib import suppress
+from uuid import UUID
 
 import pytest
 
-from .indexing_helpers import _build_project_index, _list_documents, _wait_for_index_status
+from .indexing_helpers import (
+    _build_project_index,
+    _list_documents,
+    _wait_for_documents,
+    _wait_for_index_status,
+    _wait_for_job_running,
+)
 
 
 async def test_trigger_build(project_with_parsed_docs):
@@ -212,6 +220,123 @@ async def test_job_persistence(project_with_parsed_docs):
     body = resp.json()
     assert body["job"] is not None
     assert body["job"]["id"] == job_id
+
+
+async def test_startup_recovery_fails_orphaned_job_and_restores_project_health(
+    project_with_parsed_docs,
+    mock_vector_repo,
+):
+    """Startup recovery should fail orphaned jobs, reset interrupted docs, and leave the project retryable."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    baseline_doc_ids = {doc["id"] for doc in baseline_docs}
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/documents",
+        files=[("files", ("restart-me.txt", b"restart recovery content " * 60, "text/plain"))],
+    )
+    assert upload_resp.status_code == 202
+    await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: len(items) == len(baseline_docs) + 1
+        and any(doc["id"] not in baseline_doc_ids and doc["status"] == "parsed" for doc in items),
+    )
+
+    from unittest.mock import AsyncMock
+
+    from app.repositories.document import SQLAlchemyDocumentRepository
+    from app.repositories.indexing_job import SQLAlchemyIndexingJobRepository
+    from app.repositories.project import SQLAlchemyProjectRepository
+    from app.repositories.settings import SQLAlchemySettingsRepository
+    from app.services.indexing import (
+        IndexingService,
+        recover_orphaned_indexing_state,
+        run_indexing_job,
+    )
+
+    original_embed = client._transport.app.state.embedding_service.embed_texts  # type: ignore[union-attr]
+
+    async def slow_embed(texts, model):
+        await asyncio.sleep(0.5)
+        return [[0.1] * 384 for _ in texts]
+
+    client._transport.app.state.embedding_service.embed_texts = AsyncMock(side_effect=slow_embed)  # type: ignore[union-attr]
+
+    async with client._transport.app.state.session_factory() as session:  # type: ignore[union-attr]
+        service = IndexingService(
+            SQLAlchemyIndexingJobRepository(session),
+            SQLAlchemyDocumentRepository(session),
+            SQLAlchemyProjectRepository(session),
+            SQLAlchemySettingsRepository(session),
+            mock_vector_repo,
+        )
+        job = await service.trigger_build(UUID(project_id))
+        await session.commit()
+
+    job_task = asyncio.create_task(
+        run_indexing_job(
+            client._transport.app.state.session_factory,  # type: ignore[union-attr]
+            job.id,
+            UUID(project_id),
+            mock_vector_repo,
+            client._transport.app.state.embedding_service,  # type: ignore[union-attr]
+        )
+    )
+
+    try:
+        running = await _wait_for_job_running(client, project_id)
+        assert running["job"]["documents_total"] == 1
+
+        docs = await _wait_for_documents(
+            client,
+            project_id,
+            lambda items: any(
+                doc["id"] not in baseline_doc_ids and doc["status"] == "indexing" for doc in items
+            ),
+        )
+        interrupted_doc = next(doc for doc in docs if doc["id"] not in baseline_doc_ids)
+        assert interrupted_doc["status"] == "indexing"
+
+        status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+        assert status_resp.status_code == 200
+        assert status_resp.json()["index_status"] == "indexing"
+        assert status_resp.json()["job"]["status"] == "running"
+
+        job_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await job_task
+    finally:
+        client._transport.app.state.embedding_service.embed_texts = original_embed  # type: ignore[union-attr]
+
+    recovery = await recover_orphaned_indexing_state(client._transport.app.state.session_factory)  # type: ignore[union-attr]
+    assert recovery["orphaned_jobs"] == 1
+    assert recovery["reset_documents"] == 1
+    assert recovery["recomputed_projects"] == 1
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    status_body = status_resp.json()
+    assert status_body["index_status"] == "stale"
+    assert status_body["job"]["status"] == "failed"
+    assert status_body["job"]["error_detail"]["stage"] == "startup_recovery"
+    assert "server restart" in status_body["job"]["error_detail"]["message"]
+
+    docs = await _list_documents(client, project_id)
+    old_docs = [doc for doc in docs if doc["id"] in baseline_doc_ids]
+    recovered_doc = next(doc for doc in docs if doc["id"] not in baseline_doc_ids)
+    assert all(doc["status"] == "indexed" for doc in old_docs)
+    assert recovered_doc["status"] == "parsed"
+
+    retry_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/retry")
+    assert retry_resp.status_code == 202
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == 1
 
 
 async def test_idempotent_rebuild(project_with_parsed_docs, mock_vector_repo):
