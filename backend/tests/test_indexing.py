@@ -862,6 +862,44 @@ async def test_settings_change_forces_full_rebuild(project_with_parsed_docs, moc
     mock_vector_repo.create_collection.assert_called()
 
 
+async def test_chunk_overlap_change_forces_full_rebuild(
+    project_with_parsed_docs,
+    mock_vector_repo,
+):
+    """Changing chunk overlap should mark indexed docs for reindex and the next build should be full."""
+    data = project_with_parsed_docs
+    client, project_id = data["client"], data["project_id"]
+
+    await _build_project_index(client, project_id)
+    baseline_docs = await _list_documents(client, project_id)
+    mock_vector_repo.collection_exists.return_value = True
+    mock_vector_repo.collection_count.return_value = sum(doc["chunk_count"] for doc in baseline_docs)
+    mock_vector_repo.create_collection.reset_mock()
+    mock_vector_repo.delete_collection.reset_mock()
+
+    settings_resp = await client.put("/api/v1/settings", json={"chunk_overlap": 123})
+    assert settings_resp.status_code == 200
+
+    docs = await _wait_for_documents(
+        client,
+        project_id,
+        lambda items: all(doc["status"] == "reindex_required" for doc in items),
+    )
+    assert len(docs) == len(baseline_docs)
+
+    status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["index_status"] == "stale"
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == len(baseline_docs)
+    mock_vector_repo.delete_collection.assert_called()
+    mock_vector_repo.create_collection.assert_called()
+
+
 async def test_settings_change_during_active_incremental_index_ends_stale(
     project_with_parsed_docs,
     mock_vector_repo,
