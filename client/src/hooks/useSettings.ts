@@ -17,6 +17,8 @@ export function useUpdateSettings() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
       void queryClient.invalidateQueries({ queryKey: queryKeys.provider.models });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      void queryClient.invalidateQueries({ queryKey: ['system-status'] });
     },
   });
 }
@@ -28,6 +30,8 @@ export function useResetSettings() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
       void queryClient.invalidateQueries({ queryKey: queryKeys.provider.models });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      void queryClient.invalidateQueries({ queryKey: ['system-status'] });
     },
   });
 }

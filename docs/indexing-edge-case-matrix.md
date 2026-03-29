@@ -49,15 +49,15 @@ Status legend:
 | [x] | 10.2 | Retrieval after deleting indexed doc | Deleted doc chunks no longer appear | Backend pass: retrieval query for deleted doc returned no results | Covered by `test_retrieval_integrity_after_indexed_document_delete` |
 | [x] | 10.3 | Retrieval after settings-change full rebuild | Old chunks do not leak after full rebuild | Backend pass: full rebuild replaced pre-change chunk ids and retrieval returned only rebuilt chunks | Covered by `test_retrieval_integrity_after_settings_change_full_rebuild` |
 | [x] | 10.4 | Rechunk / reparse dedupe | No duplicate chunks after rebuild | Backend pass: repeated full rebuilds after rechunk settings changes left vector chunk ids exactly matching current DB chunks, with retrieval returning only unique current chunk ids | Covered by `test_retrieval_integrity_after_rechunk_reparse_rebuild_has_no_duplicate_chunks` |
-| [ ] | 11.1 | Frontend cache refresh on upload | Index card, header counts, table, project list refresh correctly | Not run | |
-| [ ] | 11.2 | Frontend cache refresh on parse completion | Index card, header counts, table, project list refresh correctly | Not run | |
-| [ ] | 11.3 | Frontend cache refresh on build start | Index card, header counts, table, project list refresh correctly | Not run | |
-| [ ] | 11.4 | Frontend cache refresh on build completion | Index card, header counts, table, project list refresh correctly | Not run | |
-| [ ] | 11.5 | Frontend cache refresh on cancel | Index card, header counts, table, project list refresh correctly | Not run | |
-| [ ] | 11.6 | Frontend cache refresh on retry | Index card, header counts, table, project list refresh correctly | Not run | |
-| [ ] | 11.7 | Frontend cache refresh on delete | Index card, header counts, table, project list refresh correctly | Not run | |
-| [ ] | 11.8 | Frontend cache refresh on settings change | Index card, header counts, table, project list refresh correctly | Not run | |
-| [ ] | 11.9 | Frontend polling lifecycle | Polling starts and stops only when needed | Not run | |
+| [x] | 11.1 | Frontend cache refresh on upload | Index card, header counts, table, project list refresh correctly | Frontend hook pass: upload invalidated documents, indexing, project detail/list, and system-status queries | Covered by `useDocuments.test.tsx` |
+| [x] | 11.2 | Frontend cache refresh on parse completion | Index card, header counts, table, project list refresh correctly | Frontend hook pass: document polling stayed active during `parsing` and stopped once data settled to `parsed` | Covered by `useDocuments.test.tsx` |
+| [x] | 11.3 | Frontend cache refresh on build start | Index card, header counts, table, project list refresh correctly | Frontend hook pass after fix: build start now marks indexing optimistically and refreshes documents, project metadata, and system status on start transitions | Covered by `useIndexing.test.tsx` |
+| [x] | 11.4 | Frontend cache refresh on build completion | Index card, header counts, table, project list refresh correctly | Frontend hook pass: indexing completion invalidated documents, project metadata, and system status, and indexing polling stopped once settled | Covered by `useIndexing.test.tsx` |
+| [x] | 11.5 | Frontend cache refresh on cancel | Index card, header counts, table, project list refresh correctly | Frontend hook pass after fix: cancel now preserves first-build project state as `stale` and refreshes documents, project metadata, and system status | Covered by `useIndexing.test.tsx` |
+| [x] | 11.6 | Frontend cache refresh on retry | Index card, header counts, table, project list refresh correctly | Frontend hook pass: retry now restores `indexing` optimistically and refreshes documents, project metadata, and system status | Covered by `useIndexing.test.tsx` |
+| [x] | 11.7 | Frontend cache refresh on delete | Index card, header counts, table, project list refresh correctly | Frontend hook pass: delete invalidated documents, indexing, project detail/list, and system-status queries | Covered by `useDocuments.test.tsx` |
+| [x] | 11.8 | Frontend cache refresh on settings change | Index card, header counts, table, project list refresh correctly | Frontend hook pass after fix: settings changes now invalidate project-scoped queries and system status so stale/reindex-required state propagates | Covered by `useSettings.test.tsx` |
+| [x] | 11.9 | Frontend polling lifecycle | Polling starts and stops only when needed | Frontend hook pass after fix: documents/indexing poll only while active, system status polls at 2s during indexing, 5s when ready, and stops on hidden tabs | Covered by `useDocuments.test.tsx`, `useIndexing.test.tsx`, and `useSystemStatus.test.tsx` |
 | [x] | 12.1 | API contract snapshot: upload | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: first upload snapshot returned `index_status=not_indexed`, one `uploaded` doc, and `/status.project.documents_total=1` | Covered by `test_api_contract_snapshot_upload` |
 | [x] | 12.2 | API contract snapshot: parse completion | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: parsed first doc kept `index_status=not_indexed`, document `status=parsed`, and `/status` project counts stayed coherent | Covered by `test_api_contract_snapshot_parse_completion` |
 | [x] | 12.3 | API contract snapshot: build start | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: active build showed `index_status=indexing`, running job progress, doc `status=indexing`, and `/status.active_job` in sync | Covered by `test_api_contract_snapshot_build_start` |
@@ -99,3 +99,9 @@ Status legend:
 - Result: `8 passed in 8.92s`.
 - Ran `uv run pytest -q tests/test_indexing_*.py` in `/home/ubuntu/projects/ast-auto/backend`.
 - Result: `50 passed in 55.40s`.
+- Fixed frontend cache propagation for build/retry/start transitions, first-build cancel fallback, settings-driven project refresh, and system-status polling cadence.
+- Added Vitest coverage for frontend matrix rows `11.1` through `11.9` in `client/src/hooks/useDocuments.test.tsx`, `client/src/hooks/useIndexing.test.tsx`, `client/src/hooks/useSettings.test.tsx`, and `client/src/hooks/useSystemStatus.test.tsx`.
+- Ran `npm test` in `/home/ubuntu/projects/ast-auto/client`.
+- Result: `5 passed (12 tests) in 2.16s`.
+- Ran direct browser MCP verification against `http://127.0.0.1:8080` using throwaway projects.
+- Confirmed visible UI refresh for upload, parse completion, build start, cancel, retry-to-completion, settings-change stale propagation, delete, sidebar badge updates, and project-list status updates.

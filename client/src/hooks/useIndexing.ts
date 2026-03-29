@@ -16,6 +16,24 @@ function invalidateProjectMetadata(queryClient: ReturnType<typeof useQueryClient
   });
 }
 
+function invalidateSystemStatus(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({
+    queryKey: ['system-status'],
+  });
+}
+
+function invalidateProjectViews(queryClient: ReturnType<typeof useQueryClient>, projectId: string) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.documents(projectId) });
+  invalidateProjectMetadata(queryClient, projectId);
+  invalidateSystemStatus(queryClient);
+}
+
+function isIndexingActive(status: IndexingStatusResponse | undefined) {
+  if (!status) return false;
+  const jobIsActive = !!status.job && ACTIVE_JOB_STATUSES.includes(status.job.status);
+  return status.index_status === 'indexing' || jobIsActive;
+}
+
 export function useIndexingStatus(projectId: string) {
   const queryClient = useQueryClient();
   return useQuery({
@@ -23,14 +41,12 @@ export function useIndexingStatus(projectId: string) {
     queryFn: async ({ signal }) => {
       const prev = queryClient.getQueryData<IndexingStatusResponse>(queryKeys.indexing(projectId));
       const data = await indexingApi.getStatus(projectId, signal);
-      // When job transitions from active to completed, refresh documents
-      if (
-        prev?.job && ACTIVE_JOB_STATUSES.includes(prev.job.status) &&
-        data?.job && !ACTIVE_JOB_STATUSES.includes(data.job.status)
-      ) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.documents(projectId) });
-        invalidateProjectMetadata(queryClient, projectId);
+
+      // Refresh related views whenever indexing transitions into or out of an active state.
+      if (prev && isIndexingActive(prev) !== isIndexingActive(data)) {
+        invalidateProjectViews(queryClient, projectId);
       }
+
       return data;
     },
     enabled: !!projectId,
@@ -55,6 +71,7 @@ export function useBuildIndex() {
         queryKeys.indexing(projectId),
         (old) => old ? { ...old, index_status: 'indexing', job: null } : old,
       );
+      invalidateProjectViews(queryClient, projectId);
     },
   });
 }
@@ -68,12 +85,11 @@ export function useCancelIndex() {
         queryKeys.indexing(projectId),
         (old) => old ? {
           ...old,
-          index_status: old.last_indexed_at ? 'stale' : 'not_indexed',
+          index_status: 'stale',
           job: cancelledJob,
         } : old,
       );
-      void queryClient.invalidateQueries({ queryKey: queryKeys.documents(projectId) });
-      invalidateProjectMetadata(queryClient, projectId);
+      invalidateProjectViews(queryClient, projectId);
     },
   });
 }
@@ -87,6 +103,7 @@ export function useRetryIndex() {
         queryKeys.indexing(projectId),
         (old) => old ? { ...old, index_status: 'indexing', job: null } : old,
       );
+      invalidateProjectViews(queryClient, projectId);
     },
   });
 }

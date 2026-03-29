@@ -19,6 +19,12 @@ function invalidateProjectMetadata(
   });
 }
 
+function invalidateSystemStatus(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({
+    queryKey: ['system-status'],
+  });
+}
+
 export function useDocuments(projectId: string) {
   return useQuery({
     queryKey: queryKeys.documents(projectId),
@@ -48,6 +54,7 @@ export function useUploadDocuments() {
         queryKey: queryKeys.indexing(variables.projectId),
       });
       invalidateProjectMetadata(queryClient, variables.projectId);
+      invalidateSystemStatus(queryClient);
     },
   });
 }
@@ -70,6 +77,7 @@ export function useDeleteDocument() {
         queryKey: queryKeys.indexing(variables.projectId),
       });
       invalidateProjectMetadata(queryClient, variables.projectId);
+      invalidateSystemStatus(queryClient);
     },
   });
 }

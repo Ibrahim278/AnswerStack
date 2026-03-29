@@ -25,10 +25,11 @@ export function useSystemStatus(projectId?: string, options?: UseSystemStatusOpt
     retry: 3,
     retryDelay: 1000,
     gcTime: 0, // Don't cache errors across refreshes
-    refetchInterval: () => {
+    refetchInterval: (query) => {
       if (typeof document !== 'undefined' && document.hidden) return false;
+      const currentStatus = query.state.data?.status;
       // When indexing is active, poll more frequently
-      if (previousStatus.current === 'indexing') return 2000;
+      if (currentStatus === 'indexing') return 2000;
       return 5000;
     },
     refetchIntervalInBackground: false,
@@ -46,13 +47,12 @@ export function useSystemStatus(projectId?: string, options?: UseSystemStatusOpt
 
   // Fire transition notifications on status changes
   useEffect(() => {
-    if (!notifyTransitions) return;
     if (!queryResult.data) return;
 
     const currentStatus = queryResult.data.status;
     const prevStatus = previousStatus.current;
 
-    if (prevStatus !== null && prevStatus !== currentStatus) {
+    if (notifyTransitions && prevStatus !== null && prevStatus !== currentStatus) {
       fireTransitionNotification(prevStatus, currentStatus);
     }
 
