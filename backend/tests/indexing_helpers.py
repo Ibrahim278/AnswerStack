@@ -110,6 +110,24 @@ async def _build_project_index(client, project_id: str) -> dict:
     return resp.json()
 
 
+async def _get_project_chunk_ids(client, project_id: str) -> set[str]:
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.models.document import Chunk, Document
+
+    async with client._transport.app.state.session_factory() as session:  # type: ignore[union-attr]
+        return {
+            str(chunk_id)
+            for chunk_id in (
+                await session.execute(
+                    select(Chunk.id).join(Document).where(Document.project_id == UUID(project_id))
+                )
+            ).scalars()
+        }
+
+
 async def _create_project_with_parsed_documents(
     client,
     *,
@@ -241,6 +259,9 @@ def _install_stateful_vector_repo(mock_vector_repo) -> dict[str, dict[str, dict]
     def collection_count(project_id):
         return len(store.get(str(project_id), {}))
 
+    def list_chunk_ids(project_id):
+        return list(store.get(str(project_id), {}).keys())
+
     def query(project_id, query_embedding, n_results=20):
         def cosine_similarity(left: list[float], right: list[float]) -> float:
             numerator = sum(a * b for a, b in zip(left, right, strict=True))
@@ -270,6 +291,7 @@ def _install_stateful_vector_repo(mock_vector_repo) -> dict[str, dict[str, dict]
     mock_vector_repo.delete_document_embeddings.side_effect = delete_document_embeddings
     mock_vector_repo.collection_exists.side_effect = collection_exists
     mock_vector_repo.collection_count.side_effect = collection_count
+    mock_vector_repo.list_chunk_ids.side_effect = list_chunk_ids
     mock_vector_repo.query.side_effect = query
 
     return store

@@ -52,6 +52,11 @@ class VectorRepository(ABC):
         ...
 
     @abstractmethod
+    def list_chunk_ids(self, project_id: UUID) -> list[str]:
+        """Return all stored chunk ids for the project's collection."""
+        ...
+
+    @abstractmethod
     def query(
         self,
         project_id: UUID,
@@ -148,6 +153,30 @@ class ChromaDBVectorRepository(VectorRepository):
             return collection.count()
         except Exception:
             return 0
+
+    def list_chunk_ids(self, project_id: UUID) -> list[str]:
+        try:
+            collection = self._client.get_collection(
+                name=self._collection_name(project_id),
+            )
+        except Exception:
+            return []
+
+        ids: list[str] = []
+        offset = 0
+        page_size = 1000
+
+        while True:
+            results = collection.get(limit=page_size, offset=offset, include=[])
+            batch_ids = results.get("ids", []) or []
+            if not batch_ids:
+                break
+            ids.extend(batch_ids)
+            if len(batch_ids) < page_size:
+                break
+            offset += len(batch_ids)
+
+        return ids
 
     def query(
         self,

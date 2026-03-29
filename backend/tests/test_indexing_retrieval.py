@@ -4,6 +4,7 @@ from .indexing_helpers import (
     _build_project_index,
     _configure_keyword_embeddings,
     _create_project_with_parsed_documents,
+    _get_project_chunk_ids,
     _install_stateful_vector_repo,
     _list_documents,
     _wait_for_documents,
@@ -113,6 +114,37 @@ async def test_retrieval_integrity_after_indexed_document_delete(
         similarity_threshold=0.8,
     )
     assert results == []
+
+
+async def test_indexed_document_delete_restores_exact_vector_chunk_parity(
+    async_client_with_indexing,
+    mock_vector_repo,
+    mock_embedding_service,
+):
+    """Deleting an indexed document should leave remaining SQLite and Chroma chunk ids identical."""
+    client = async_client_with_indexing
+    _configure_keyword_embeddings(mock_embedding_service)
+    vector_store = _install_stateful_vector_repo(mock_vector_repo)
+
+    project_id = await _create_project_with_parsed_documents(
+        client,
+        name="Retrieval Delete Parity",
+        files=[
+            ("alpha.txt", b"alpha alpha alpha baseline"),
+            ("beta.txt", b"beta beta beta baseline"),
+        ],
+    )
+    await _build_project_index(client, project_id)
+
+    docs = await _list_documents(client, project_id)
+    victim = next(doc for doc in docs if doc["filename"] == "beta.txt")
+
+    delete_resp = await client.delete(f"/api/v1/projects/{project_id}/documents/{victim['id']}")
+    assert delete_resp.status_code == 204
+
+    remaining_chunk_ids = await _get_project_chunk_ids(client, project_id)
+    assert remaining_chunk_ids
+    assert set(vector_store[project_id].keys()) == remaining_chunk_ids
 
 
 async def test_retrieval_integrity_after_settings_change_full_rebuild(

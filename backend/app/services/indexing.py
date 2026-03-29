@@ -75,6 +75,43 @@ def _select_documents_for_run(
     return [doc for doc in documents if doc.status in allowed_statuses]
 
 
+def _get_indexed_documents(documents: list[Document]) -> list[Document]:
+    return [doc for doc in documents if doc.status == DocumentStatus.INDEXED]
+
+
+def _get_chunk_ids(documents: list[Document]) -> set[str]:
+    return {str(chunk.id) for doc in documents for chunk in doc.chunks}
+
+
+async def _vector_index_missing_or_out_of_sync(
+    vector_repo: VectorRepository,
+    project_id: UUID,
+    indexed_documents: list[Document],
+    *,
+    collection_exists: bool | None = None,
+    collection_count: int | None = None,
+) -> bool:
+    if not indexed_documents:
+        return False
+
+    if collection_exists is None:
+        collection_exists = await asyncio.to_thread(vector_repo.collection_exists, project_id)
+    if not collection_exists:
+        return True
+
+    if collection_count is None:
+        collection_count = await asyncio.to_thread(vector_repo.collection_count, project_id)
+    if collection_count == 0:
+        return True
+
+    expected_chunk_ids = _get_chunk_ids(indexed_documents)
+    if collection_count != len(expected_chunk_ids):
+        return True
+
+    vector_chunk_ids = set(await asyncio.to_thread(vector_repo.list_chunk_ids, project_id))
+    return vector_chunk_ids != expected_chunk_ids
+
+
 async def _compute_project_index_status(
     doc_repo: DocumentRepository,
     project_repo: ProjectRepository,
@@ -358,9 +395,7 @@ class IndexingService:
         if selected:
             return selected
 
-        indexed_documents = [
-            doc for doc in documents if doc.status == DocumentStatus.INDEXED
-        ]
+        indexed_documents = _get_indexed_documents(documents)
         if not indexed_documents:
             return []
 
@@ -373,7 +408,13 @@ class IndexingService:
             if collection_exists
             else 0
         )
-        if not collection_exists or collection_count == 0:
+        if await _vector_index_missing_or_out_of_sync(
+            self._vector_repo,
+            project_id,
+            indexed_documents,
+            collection_exists=collection_exists,
+            collection_count=collection_count,
+        ):
             return indexed_documents
 
         return []
@@ -611,9 +652,8 @@ async def run_indexing_job(
                 all_documents,
                 current_chunk_params_hash,
             )
-            has_indexed_documents = any(
-                doc.status == DocumentStatus.INDEXED for doc in all_documents
-            )
+            indexed_documents = _get_indexed_documents(all_documents)
+            has_indexed_documents = bool(indexed_documents)
             collection_exists = await asyncio.to_thread(
                 vector_repo.collection_exists, project_id
             )
@@ -622,10 +662,14 @@ async def run_indexing_job(
                 if collection_exists
                 else 0
             )
-            missing_collection_rebuild = has_indexed_documents and (
-                not collection_exists or collection_count == 0
+            vector_drift_rebuild = has_indexed_documents and await _vector_index_missing_or_out_of_sync(
+                vector_repo,
+                project_id,
+                indexed_documents,
+                collection_exists=collection_exists,
+                collection_count=collection_count,
             )
-            full_rebuild = settings_changed_rebuild or missing_collection_rebuild
+            full_rebuild = settings_changed_rebuild or vector_drift_rebuild
             collection_rebuilt = full_rebuild
             documents = _select_documents_for_run(
                 all_documents,

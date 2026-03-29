@@ -4,6 +4,10 @@ import asyncio
 
 from .indexing_helpers import (
     _build_project_index,
+    _configure_keyword_embeddings,
+    _create_project_with_parsed_documents,
+    _get_project_chunk_ids,
+    _install_stateful_vector_repo,
     _list_documents,
     _wait_for_documents,
     _wait_for_index_status,
@@ -203,6 +207,82 @@ async def test_trigger_build_detects_missing_collection_and_rebuilds_indexed_doc
 
     final_status = await _wait_for_index_status(client, project_id, "indexed")
     assert final_status["job"]["documents_total"] == len(docs)
+
+
+async def test_trigger_build_detects_missing_chunk_id_and_rebuilds_indexed_documents(
+    async_client_with_indexing,
+    mock_vector_repo,
+    mock_embedding_service,
+):
+    """Indexed projects should rebuild when Chroma is missing only part of the chunk set."""
+    client = async_client_with_indexing
+    _configure_keyword_embeddings(mock_embedding_service)
+    vector_store = _install_stateful_vector_repo(mock_vector_repo)
+
+    project_id = await _create_project_with_parsed_documents(
+        client,
+        name="Missing Vector Chunk",
+        files=[
+            ("alpha.txt", b"alpha alpha alpha baseline"),
+            ("beta.txt", b"beta beta beta baseline"),
+        ],
+    )
+    await _build_project_index(client, project_id)
+
+    docs = await _list_documents(client, project_id)
+    original_chunk_ids = await _get_project_chunk_ids(client, project_id)
+    assert set(vector_store[project_id].keys()) == original_chunk_ids
+
+    missing_chunk_id = next(iter(original_chunk_ids))
+    vector_store[project_id].pop(missing_chunk_id)
+    assert set(vector_store[project_id].keys()) == original_chunk_ids - {missing_chunk_id}
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == len(docs)
+    assert set(vector_store[project_id].keys()) == original_chunk_ids
+
+
+async def test_trigger_build_detects_chunk_id_drift_when_vector_count_matches(
+    async_client_with_indexing,
+    mock_vector_repo,
+    mock_embedding_service,
+):
+    """Count-only health checks must not accept a collection with the wrong chunk ids."""
+    client = async_client_with_indexing
+    _configure_keyword_embeddings(mock_embedding_service)
+    vector_store = _install_stateful_vector_repo(mock_vector_repo)
+
+    project_id = await _create_project_with_parsed_documents(
+        client,
+        name="Vector Membership Drift",
+        files=[
+            ("alpha.txt", b"alpha alpha alpha baseline"),
+            ("beta.txt", b"beta beta beta baseline"),
+        ],
+    )
+    await _build_project_index(client, project_id)
+
+    docs = await _list_documents(client, project_id)
+    original_chunk_ids = await _get_project_chunk_ids(client, project_id)
+    removed_chunk_id, removed_payload = next(iter(vector_store[project_id].items()))
+    vector_store[project_id].pop(removed_chunk_id)
+    vector_store[project_id]["orphan-chunk-id"] = {
+        **removed_payload,
+        "metadata": {**removed_payload["metadata"], "chunk_index": 999},
+    }
+    assert len(vector_store[project_id]) == len(original_chunk_ids)
+    assert set(vector_store[project_id].keys()) != original_chunk_ids
+
+    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
+    assert build_resp.status_code == 202
+
+    final_status = await _wait_for_index_status(client, project_id, "indexed")
+    assert final_status["job"]["documents_total"] == len(docs)
+    assert set(vector_store[project_id].keys()) == original_chunk_ids
+    assert "orphan-chunk-id" not in vector_store[project_id]
 
 
 async def test_full_rebuild_cancel_at_zero_of_total_stays_stale(

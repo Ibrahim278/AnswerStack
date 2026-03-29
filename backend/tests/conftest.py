@@ -178,12 +178,59 @@ async def async_client_with_provider(async_engine, mock_openai_client) -> AsyncG
 @pytest.fixture
 def mock_vector_repo():
     """Mock VectorRepository for indexing tests (avoids real ChromaDB)."""
+    collections: set[str] = set()
+    store: dict[str, dict[str, dict]] = {}
+
+    def _project_store(project_id) -> dict[str, dict]:
+        return store.setdefault(str(project_id), {})
+
+    def create_collection(project_id):
+        collections.add(str(project_id))
+        store[str(project_id)] = {}
+
+    def delete_collection(project_id):
+        collections.discard(str(project_id))
+        store.pop(str(project_id), None)
+
+    def upsert_embeddings(project_id, ids, embeddings, documents, metadatas):
+        project_store = _project_store(project_id)
+        collections.add(str(project_id))
+        for chunk_id, embedding, document, metadata in zip(
+            ids, embeddings, documents, metadatas, strict=True
+        ):
+            project_store[chunk_id] = {
+                "embedding": embedding,
+                "document": document,
+                "metadata": metadata,
+            }
+
+    def delete_document_embeddings(project_id, document_id):
+        project_store = _project_store(project_id)
+        doomed_ids = [
+            chunk_id
+            for chunk_id, payload in project_store.items()
+            if payload["metadata"].get("document_id") == str(document_id)
+        ]
+        for chunk_id in doomed_ids:
+            project_store.pop(chunk_id, None)
+
+    def collection_exists(project_id):
+        return str(project_id) in collections
+
+    def collection_count(project_id):
+        return len(store.get(str(project_id), {}))
+
+    def list_chunk_ids(project_id):
+        return list(store.get(str(project_id), {}).keys())
+
     repo = MagicMock()
-    repo.create_collection = MagicMock()
-    repo.delete_collection = MagicMock()
-    repo.upsert_embeddings = MagicMock()
-    repo.collection_exists = MagicMock(return_value=True)
-    repo.collection_count = MagicMock(return_value=0)
+    repo.create_collection = MagicMock(wraps=create_collection)
+    repo.delete_collection = MagicMock(wraps=delete_collection)
+    repo.delete_document_embeddings = MagicMock(wraps=delete_document_embeddings)
+    repo.upsert_embeddings = MagicMock(wraps=upsert_embeddings)
+    repo.collection_exists = MagicMock(wraps=collection_exists)
+    repo.collection_count = MagicMock(wraps=collection_count)
+    repo.list_chunk_ids = MagicMock(wraps=list_chunk_ids)
     return repo
 
 
