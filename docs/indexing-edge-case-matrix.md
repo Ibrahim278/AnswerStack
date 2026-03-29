@@ -1,6 +1,6 @@
 # Indexing Edge-Case Matrix
 
-Last updated: 2026-03-28
+Last updated: 2026-03-29
 
 Purpose: track execution of indexing, cancellation, settings, deletion, cache refresh, and retrieval-integrity scenarios across sessions.
 
@@ -58,14 +58,14 @@ Status legend:
 | [ ] | 11.7 | Frontend cache refresh on delete | Index card, header counts, table, project list refresh correctly | Not run | |
 | [ ] | 11.8 | Frontend cache refresh on settings change | Index card, header counts, table, project list refresh correctly | Not run | |
 | [ ] | 11.9 | Frontend polling lifecycle | Polling starts and stops only when needed | Not run | |
-| [ ] | 12.1 | API contract snapshot: upload | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Not run | |
-| [ ] | 12.2 | API contract snapshot: parse completion | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Not run | |
-| [ ] | 12.3 | API contract snapshot: build start | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Not run | |
-| [ ] | 12.4 | API contract snapshot: build completion | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Not run | |
-| [ ] | 12.5 | API contract snapshot: cancel | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Not run | |
-| [ ] | 12.6 | API contract snapshot: retry | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Not run | |
-| [ ] | 12.7 | API contract snapshot: delete | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Not run | |
-| [ ] | 12.8 | API contract snapshot: settings change | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Not run | |
+| [x] | 12.1 | API contract snapshot: upload | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: first upload snapshot returned `index_status=not_indexed`, one `uploaded` doc, and `/status.project.documents_total=1` | Covered by `test_api_contract_snapshot_upload` |
+| [x] | 12.2 | API contract snapshot: parse completion | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: parsed first doc kept `index_status=not_indexed`, document `status=parsed`, and `/status` project counts stayed coherent | Covered by `test_api_contract_snapshot_parse_completion` |
+| [x] | 12.3 | API contract snapshot: build start | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: active build showed `index_status=indexing`, running job progress, doc `status=indexing`, and `/status.active_job` in sync | Covered by `test_api_contract_snapshot_build_start` |
+| [x] | 12.4 | API contract snapshot: build completion | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: completed build returned `index_status=indexed`, completed job metadata, indexed documents, and `/status=ready` | Covered by `test_api_contract_snapshot_build_completion` |
+| [x] | 12.5 | API contract snapshot: cancel | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: cancelled first build preserved latest job `status=cancelled`, restored doc to `parsed`, and project returned `stale` | Covered by `test_api_contract_snapshot_cancel` |
+| [x] | 12.6 | API contract snapshot: retry | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: retry created a fresh running job, doc returned to `indexing`, and `/status.active_job` reflected the retry | Covered by `test_api_contract_snapshot_retry` |
+| [x] | 12.7 | API contract snapshot: delete | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: deleting the only parsed delta removed it from `/documents` and restored project snapshots to indexed baseline | Covered by `test_api_contract_snapshot_delete` |
+| [x] | 12.8 | API contract snapshot: settings change | `/projects/{id}/indexing/status`, `/documents`, optional `/status` align with UI | Backend contract pass: settings drift flipped docs to `reindex_required`, project to `stale`, and `/status.project.documents_stale` matched all docs | Covered by `test_api_contract_snapshot_settings_change` |
 
 ## Execution Log
 
@@ -87,3 +87,15 @@ Status legend:
 - Ran `uv run pytest -q tests/test_indexing.py` in `/home/ubuntu/projects/ast-auto/backend`.
 - Result: `34 passed in 34.51s`.
 - Delete-path SQLAlchemy warnings are now gone in the indexing suite.
+
+### 2026-03-29
+
+- Added `backend/tests/test_indexing_api_contracts.py` to snapshot normalized API responses across upload, parse completion, build start, build completion, cancel, retry, delete, and settings change flows.
+- Verified `/api/v1/projects/{id}/indexing/status`, `/api/v1/projects/{id}/documents`, and `/api/v1/status?project_id={id}` stay contract-consistent for matrix rows `12.1` through `12.8`.
+- Notable contract behavior now pinned by tests:
+  - first-build cancellation returns project `index_status=stale` while leaving the document `parsed`
+  - `/api/v1/status` derives top-level `stale` from project index state even when `documents_stale=0`
+- Ran `uv run pytest -q tests/test_indexing_api_contracts.py` in `/home/ubuntu/projects/ast-auto/backend`.
+- Result: `8 passed in 8.92s`.
+- Ran `uv run pytest -q tests/test_indexing_*.py` in `/home/ubuntu/projects/ast-auto/backend`.
+- Result: `50 passed in 55.40s`.

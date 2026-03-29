@@ -509,10 +509,7 @@ async def test_delete_uploaded_document_restores_indexed_project(
     data = project_with_parsed_docs
     client, project_id = data["client"], data["project_id"]
 
-    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
-    assert build_resp.status_code == 202
-    terminal = await _wait_for_job_terminal_state(client, project_id)
-    assert terminal["job"]["status"] == "completed"
+    await _build_project_index(client, project_id)
     baseline_docs = await _wait_for_documents(
         client,
         project_id,
@@ -554,10 +551,7 @@ async def test_delete_parsing_document_restores_indexed_project(
     data = project_with_parsed_docs
     client, project_id = data["client"], data["project_id"]
 
-    build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
-    assert build_resp.status_code == 202
-    terminal = await _wait_for_job_terminal_state(client, project_id)
-    assert terminal["job"]["status"] == "completed"
+    await _build_project_index(client, project_id)
     baseline_docs = await _wait_for_documents(
         client,
         project_id,
