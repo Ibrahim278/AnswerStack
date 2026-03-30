@@ -134,11 +134,55 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Failed to recover orphaned jobs at startup", error=str(e))
 
+    # Initialize speech providers based on config
+    stt_provider = None
+    tts_provider = None
+
+    if settings.stt_provider == "elevenlabs" and settings.elevenlabs_api_key:
+        from app.services.speech.elevenlabs_stt import ElevenLabsSTTProvider
+
+        stt_provider = ElevenLabsSTTProvider(
+            api_key=settings.elevenlabs_api_key,
+            model_id=settings.elevenlabs_stt_model,
+        )
+        logger.info("ElevenLabs STT provider initialized")
+
+    if settings.tts_provider == "elevenlabs" and settings.elevenlabs_api_key:
+        from app.services.speech.elevenlabs_tts import ElevenLabsTTSProvider
+
+        tts_provider = ElevenLabsTTSProvider(
+            api_key=settings.elevenlabs_api_key,
+            model_id=settings.elevenlabs_tts_model,
+            default_voice=settings.elevenlabs_tts_voice_id,
+        )
+        logger.info("ElevenLabs TTS provider initialized")
+    elif settings.tts_provider == "kokoro" and settings.kokoro_base_url:
+        from app.services.speech.kokoro_tts import KokoroTTSProvider
+
+        tts_provider = KokoroTTSProvider(
+            base_url=settings.kokoro_base_url,
+            default_voice=settings.kokoro_voice,
+        )
+        logger.info("Kokoro TTS provider initialized", base_url=settings.kokoro_base_url)
+
+    app.state.stt_provider = stt_provider
+    app.state.tts_provider = tts_provider
+
+    if not stt_provider and not tts_provider:
+        logger.info("No speech providers configured, speech endpoints will return 503")
+
     logger.info("Application started", app_name=settings.app_name, database=_mask_db_url(settings.database_url))
 
     yield
 
-    # Cleanup
+    # Cleanup speech provider httpx clients
+    if hasattr(app.state, "stt_provider") and app.state.stt_provider:
+        if hasattr(app.state.stt_provider, "_client"):
+            await app.state.stt_provider._client.aclose()
+    if hasattr(app.state, "tts_provider") and app.state.tts_provider:
+        if hasattr(app.state.tts_provider, "_client"):
+            await app.state.tts_provider._client.aclose()
+
     await provider_service.close()
     await engine.dispose()
     logger.info("Application shutdown")

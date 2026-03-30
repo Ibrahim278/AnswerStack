@@ -8,6 +8,7 @@ from app.api.v1.indexing import router as indexing_router
 from app.api.v1.projects import router as projects_router
 from app.api.v1.provider import router as provider_router
 from app.api.v1.settings import router as settings_router
+from app.api.v1.speech import router as speech_router
 from app.api.v1.status import router as status_router
 
 api_v1_router = APIRouter()
@@ -19,4 +20,5 @@ api_v1_router.include_router(settings_router)
 api_v1_router.include_router(provider_router)
 api_v1_router.include_router(chat_router)
 api_v1_router.include_router(suggested_prompts_router)
+api_v1_router.include_router(speech_router)
 api_v1_router.include_router(status_router)
