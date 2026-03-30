@@ -101,51 +101,41 @@ describe('ChatComposer', () => {
   it('shows mic button when stt is available', () => {
     render(<ComposerHarness stt="available" />);
 
-    expect(screen.getByLabelText('Hold to dictate your question')).toBeInTheDocument();
+    expect(screen.getByLabelText('Click to start dictation')).toBeInTheDocument();
   });
 
   it('keeps the microphone hidden when STT capability is unavailable', () => {
     render(<ComposerHarness stt="unavailable" />);
 
-    expect(screen.queryByLabelText('Hold to dictate your question')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Click to start dictation')).not.toBeInTheDocument();
   });
 
-  it('updates the textarea with interim transcript on pointerdown', async () => {
+  it('click starts recording and updates textarea with interim transcript', async () => {
     render(<ComposerHarness />);
 
-    const button = screen.getByLabelText('Hold to dictate your question');
-    attachPointerCaptureMocks(button);
-
-    fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
+    const button = screen.getByLabelText('Click to start dictation');
+    fireEvent.click(button);
 
     await waitFor(() => {
       expect(screen.getByRole('textbox')).toHaveValue('Original question with interim speech');
     });
   });
 
-  it('release commits transcript and does not auto-send', async () => {
+  it('second click commits transcript and does not auto-send', async () => {
     const onSend = vi.fn();
     const onCommit = vi.fn();
 
     render(<ComposerHarness onSend={onSend} onCommit={onCommit} />);
 
-    const button = screen.getByLabelText('Hold to dictate your question');
-    attachPointerCaptureMocks(button);
-    Object.defineProperty(document, 'elementFromPoint', {
-      configurable: true,
-      value: vi.fn(() => button),
-    });
+    const button = screen.getByLabelText('Click to start dictation');
+    fireEvent.click(button);
 
-    fireEvent.pointerDown(button, { pointerId: 1, button: 0, clientX: 12, clientY: 12 });
     await waitFor(() => {
       expect(screen.getByRole('textbox')).toHaveValue('Original question with interim speech');
     });
 
-    fireEvent.pointerUp(screen.getByLabelText('Release to keep transcript, drag away or press Escape to cancel'), {
-      pointerId: 1,
-      clientX: 12,
-      clientY: 12,
-    });
+    // Second click commits
+    fireEvent.click(screen.getByLabelText('Click to finish recording'));
 
     await waitFor(() => {
       expect(screen.getByRole('textbox')).toHaveValue('Original question with final speech');
@@ -158,10 +148,9 @@ describe('ChatComposer', () => {
     const onCancel = vi.fn();
     render(<ComposerHarness onCancel={onCancel} />);
 
-    const button = screen.getByLabelText('Hold to dictate your question');
-    attachPointerCaptureMocks(button);
+    const button = screen.getByLabelText('Click to start dictation');
+    fireEvent.click(button);
 
-    fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
     await waitFor(() => {
       expect(screen.getByRole('textbox')).toHaveValue('Original question with interim speech');
     });
@@ -275,7 +264,7 @@ describe('ChatComposer', () => {
   it('disables the mic button while streaming', () => {
     render(<ComposerHarness isStreaming />);
 
-    expect(screen.getByLabelText('Hold to dictate your question')).toBeDisabled();
+    expect(screen.getByLabelText('Click to start dictation')).toBeDisabled();
     expect(
       screen.getByText('Wait for the current answer to finish before dictating another question.'),
     ).toBeInTheDocument();

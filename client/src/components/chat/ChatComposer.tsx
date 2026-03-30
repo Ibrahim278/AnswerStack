@@ -58,8 +58,8 @@ export function ChatComposer({
     onCancel,
   } = speechController;
 
-  const isRecording =
-    speechRecognitionState === 'arming' || speechRecognitionState === 'listening';
+  const isArming = speechRecognitionState === 'arming';
+  const isRecording = isArming || speechRecognitionState === 'listening';
   const isProcessing = speechRecognitionState === 'processing';
 
   useEffect(() => {
@@ -123,7 +123,7 @@ export function ChatComposer({
           <SpeechCaptureButton
             disabled={isStreaming}
             isRecording={isRecording}
-            isProcessing={isProcessing}
+            isProcessing={isProcessing || isArming}
             onPressStart={() => {
               void onPressStart();
             }}
