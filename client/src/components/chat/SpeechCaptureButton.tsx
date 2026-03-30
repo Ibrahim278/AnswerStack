@@ -49,7 +49,7 @@ export function SpeechCaptureButton({
         }
 
         event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.setPointerCapture?.(event.pointerId);
         onPressStart();
       }}
       onPointerUp={(event) => {
@@ -57,8 +57,8 @@ export function SpeechCaptureButton({
           return;
         }
 
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId);
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+          event.currentTarget.releasePointerCapture?.(event.pointerId);
         }
 
         if (isPointerInsideButton(event.currentTarget, event.clientX, event.clientY)) {

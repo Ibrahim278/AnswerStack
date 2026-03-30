@@ -1,19 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Send, Plus, MessageSquare, Trash2, StopCircle,
+  Plus, MessageSquare, Trash2,
   Loader2, AlertCircle, ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProject } from '@/hooks/useProjects';
 import { useSessionList, useDeleteSession, useSessionDetail } from '@/hooks/useSessions';
 import { useChat } from '@/hooks/useChat';
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import { detectSpeechCapabilities } from '@/lib/speech';
 import { useChatStore } from '@/stores/chatStore';
 import { isValidUuid } from '@/utils/isValidUuid';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { StreamingMessage } from '@/components/chat/StreamingMessage';
 import { SourcePanel } from '@/components/chat/SourcePanel';
@@ -35,14 +37,28 @@ export default function ChatPage() {
 
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previousRouteSessionIdRef = useRef(routeSessionId);
+
+  const speechCapabilities = useChatStore((s) => s.speechCapabilities);
+  const microphonePermission = useChatStore((s) => s.microphonePermission);
+  const speechRecognitionState = useChatStore((s) => s.speechRecognitionState);
+  const speechPlaybackState = useChatStore((s) => s.speechPlaybackState);
+  const speechError = useChatStore((s) => s.speechError);
+  const speechCommittedPrefix = useChatStore((s) => s.speechCommittedPrefix);
+  const setSpeechCapabilities = useChatStore((s) => s.setSpeechCapabilities);
+
+  const isSpeechRecording =
+    speechRecognitionState === 'arming' || speechRecognitionState === 'listening';
 
   // SSE streaming
   const handleSessionCreated = useCallback(
     (newSessionId: string) => {
+      if (isSpeechRecording) {
+        setInput(speechCommittedPrefix);
+      }
       navigate(`/projects/${projectId}/chat/${newSessionId}`, { replace: true });
     },
-    [navigate, projectId],
+    [isSpeechRecording, navigate, projectId, speechCommittedPrefix],
   );
 
   const { sendMessage, stop, isStreaming } = useChat({
@@ -55,6 +71,46 @@ export default function ChatPage() {
   const sourcePanelOpen = useChatStore((s) => s.sourcePanelOpen);
   const closeSourcePanel = useChatStore((s) => s.closeSourcePanel);
 
+  const speechRecognition = useSpeechRecognition({
+    value: input,
+    onInterimText: (nextValue) => setInput(nextValue),
+    onCommit: (finalValue) => setInput(finalValue),
+    onCancel: (restoreValue) => setInput(restoreValue),
+  });
+  const {
+    startCapture,
+    commitCapture,
+    cancelCapture,
+  } = speechRecognition;
+  const cleanupSpeechRecognition = useCallback(
+    () => speechRecognition.cleanup(),
+    [speechRecognition.cleanup],
+  );
+
+  const cancelRecordingIfActive = useCallback(() => {
+    if (isSpeechRecording) {
+      cancelCapture();
+    }
+  }, [cancelCapture, isSpeechRecording]);
+
+  const handleSpeechStart = useCallback(async () => {
+    if (isStreaming) {
+      return false;
+    }
+
+    return startCapture();
+  }, [isStreaming, startCapture]);
+
+  const speechController = {
+    speechCapabilities,
+    microphonePermission,
+    speechRecognitionState,
+    speechError,
+    onPressStart: handleSpeechStart,
+    onCommit: commitCapture,
+    onCancel: cancelCapture,
+  };
+
   // Close source panel when there's no active session
   useEffect(() => {
     if (!routeSessionId && sourcePanelOpen) {
@@ -66,6 +122,38 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, accumulatedTokens]);
 
+  useEffect(() => {
+    setSpeechCapabilities(detectSpeechCapabilities());
+  }, [setSpeechCapabilities]);
+
+  useEffect(() => {
+    const handleWindowBlur = () => {
+      cancelRecordingIfActive();
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    return () => window.removeEventListener('blur', handleWindowBlur);
+  }, [cancelRecordingIfActive]);
+
+  useEffect(() => {
+    if (previousRouteSessionIdRef.current !== routeSessionId) {
+      cancelRecordingIfActive();
+      previousRouteSessionIdRef.current = routeSessionId;
+    }
+  }, [cancelRecordingIfActive, routeSessionId]);
+
+  useEffect(() => {
+    if (isSpeechRecording && (speechPlaybackState === 'starting' || speechPlaybackState === 'playing')) {
+      cancelCapture();
+      setInput(speechCommittedPrefix);
+    }
+  }, [cancelCapture, isSpeechRecording, speechCommittedPrefix, speechPlaybackState]);
+
+  useEffect(() => () => {
+    cancelRecordingIfActive();
+    cleanupSpeechRecognition();
+  }, [cancelRecordingIfActive, cleanupSpeechRecognition]);
+
   const handleSend = useCallback(() => {
     if (!input.trim() || isStreaming) return;
     const content = input.trim();
@@ -75,18 +163,13 @@ export default function ChatPage() {
 
   const handleStop = () => { stop(); };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
   const handleNewChat = () => {
+    cancelRecordingIfActive();
     navigate(`/projects/${projectId}/chat`);
   };
 
   const handleSelectSession = (sid: string) => {
+    cancelRecordingIfActive();
     navigate(`/projects/${projectId}/chat/${sid}`);
   };
 
@@ -94,6 +177,7 @@ export default function ChatPage() {
     deleteSessionMutation.mutate(sid, {
       onSuccess: () => {
         if (routeSessionId === sid) {
+          cancelRecordingIfActive();
           navigate(`/projects/${projectId}/chat`);
         }
       },
@@ -205,37 +289,15 @@ export default function ChatPage() {
 
               {/* Quick start: type a question directly */}
               <div className="max-w-md mx-auto mb-6">
-                <div className="flex items-end gap-2">
-                  <Textarea
-                    ref={textareaRef}
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        if (input.trim()) {
-                          void sendMessage({ question: input.trim() });
-                          setInput('');
-                        }
-                      }
-                    }}
-                    placeholder="Ask a question to start a new chat..."
-                    className="min-h-[44px] max-h-32 resize-none"
-                    rows={1}
-                  />
-                  <Button
-                    size="icon"
-                    onClick={() => {
-                      if (input.trim()) {
-                        void sendMessage({ question: input.trim() });
-                        setInput('');
-                      }
-                    }}
-                    disabled={!input.trim() || isStreaming}
-                  >
-                    <Send className="w-4 h-4" />
-                  </Button>
-                </div>
+                <ChatComposer
+                  value={input}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  onStopStreaming={handleStop}
+                  isStreaming={isStreaming}
+                  placeholder="Ask a question to start a new chat..."
+                  speechController={speechController}
+                />
               </div>
 
               <p className="text-xs text-muted-foreground mb-4">Or try a suggested prompt:</p>
@@ -264,7 +326,7 @@ export default function ChatPage() {
                       {suggestedPrompts.map(prompt => (
                         <button
                           key={prompt}
-                          onClick={() => { setInput(prompt); textareaRef.current?.focus(); }}
+                          onClick={() => { setInput(prompt); }}
                           className="text-xs px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                         >
                           {prompt}
@@ -312,25 +374,16 @@ export default function ChatPage() {
 
             {/* Composer */}
             <div className="border-t border-border p-4 bg-background">
-              <div className="max-w-[800px] mx-auto flex items-end gap-2">
-                <Textarea
-                  ref={textareaRef}
+              <div className="max-w-[800px] mx-auto">
+                <ChatComposer
                   value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  onStopStreaming={handleStop}
+                  isStreaming={isStreaming}
                   placeholder="Ask a question about your documents..."
-                  className="min-h-[44px] max-h-32 resize-none"
-                  rows={1}
+                  speechController={speechController}
                 />
-                {isStreaming ? (
-                  <Button variant="outline" size="icon" onClick={handleStop}>
-                    <StopCircle className="w-4 h-4 text-destructive" />
-                  </Button>
-                ) : (
-                  <Button size="icon" onClick={handleSend} disabled={!input.trim()}>
-                    <Send className="w-4 h-4" />
-                  </Button>
-                )}
               </div>
             </div>
           </>
