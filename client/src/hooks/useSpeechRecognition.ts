@@ -73,6 +73,17 @@ export function useSpeechRecognition({
   const latestTranscriptRef = useRef('');
   const suppressNextErrorRef = useRef(false);
   const hadPermissionSuccessRef = useRef(false);
+  const onInterimTextRef = useRef(onInterimText);
+  const onCommitRef = useRef(onCommit);
+  const onCancelRef = useRef(onCancel);
+  const onStartRef = useRef(onStart);
+
+  useEffect(() => {
+    onInterimTextRef.current = onInterimText;
+    onCommitRef.current = onCommit;
+    onCancelRef.current = onCancel;
+    onStartRef.current = onStart;
+  }, [onInterimText, onCommit, onCancel, onStart]);
 
   const cleanupStoreState = useCallback(() => {
     const state = useChatStore.getState();
@@ -114,10 +125,10 @@ export function useSpeechRecognition({
 
       cancelActiveRecognition();
       state.cancelSpeechCapture();
-      onCancel(committedPrefixRef.current);
+      onCancelRef.current(committedPrefixRef.current);
       state.setSpeechRecognitionError(buildSpeechErrorNotice('not-allowed'));
     },
-    [cancelActiveRecognition, onCancel],
+    [cancelActiveRecognition],
   );
 
   const cleanup = useCallback(() => {
@@ -181,7 +192,7 @@ export function useSpeechRecognition({
           state.setMicrophonePermission('denied');
         }
 
-        onCancel(committedPrefixRef.current);
+        onCancelRef.current(committedPrefixRef.current);
         state.setSpeechRecognitionError(buildSpeechErrorNotice(preflight.reason));
         return false;
       }
@@ -191,7 +202,7 @@ export function useSpeechRecognition({
     }
 
     if (permission === 'denied') {
-      onCancel(committedPrefixRef.current);
+      onCancelRef.current(committedPrefixRef.current);
       state.setSpeechRecognitionError(buildSpeechErrorNotice('not-allowed'));
       return false;
     }
@@ -204,7 +215,7 @@ export function useSpeechRecognition({
     recognition.onstart = () => {
       hadPermissionSuccessRef.current = true;
       state.setSpeechListening();
-      onStart?.();
+      onStartRef.current?.();
     };
 
     recognition.onresult = (event) => {
@@ -212,7 +223,7 @@ export function useSpeechRecognition({
       latestTranscriptRef.current = transcript;
       const nextValue = `${committedPrefixRef.current}${transcript}`;
       state.updateSpeechDraft(nextValue);
-      onInterimText(nextValue);
+      onInterimTextRef.current(nextValue);
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
@@ -223,7 +234,7 @@ export function useSpeechRecognition({
         return;
       }
 
-      onCancel(committedPrefixRef.current);
+      onCancelRef.current(committedPrefixRef.current);
 
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         state.setMicrophonePermission('denied');
@@ -243,11 +254,11 @@ export function useSpeechRecognition({
       return true;
     } catch (error) {
       recognitionRef.current = null;
-      onCancel(committedPrefixRef.current);
+      onCancelRef.current(committedPrefixRef.current);
       state.setSpeechRecognitionError(normalizeStartError(error));
       return false;
     }
-  }, [onCancel, onInterimText, onStart, queryPermission, recognitionFactory, requestPreflight, value]);
+  }, [queryPermission, recognitionFactory, requestPreflight, value]);
 
   const commitCapture = useCallback(() => {
     const state = useChatStore.getState();
@@ -258,8 +269,8 @@ export function useSpeechRecognition({
     recognition?.stop();
     recognitionRef.current = null;
     state.commitSpeechCapture(finalValue);
-    onCommit(finalValue);
-  }, [onCommit]);
+    onCommitRef.current(finalValue);
+  }, []);
 
   const cancelCapture = useCallback(() => {
     const state = useChatStore.getState();
@@ -267,8 +278,8 @@ export function useSpeechRecognition({
     cancelActiveRecognition();
     latestTranscriptRef.current = '';
     state.cancelSpeechCapture();
-    onCancel(committedPrefixRef.current);
-  }, [cancelActiveRecognition, onCancel]);
+    onCancelRef.current(committedPrefixRef.current);
+  }, [cancelActiveRecognition]);
 
   return {
     startCapture,
