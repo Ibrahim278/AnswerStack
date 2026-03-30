@@ -234,6 +234,15 @@ export function buildSpeechErrorNotice(
   kind: string,
   phase: 'recognition' | 'playback' = 'recognition',
 ): SpeechErrorNotice {
+  if (kind === 'pending') {
+    return {
+      code: 'unknown',
+      title: 'Microphone permission pending',
+      message:
+        'Chromium is still waiting for a microphone decision. Allow access or cancel the prompt and try again.',
+    };
+  }
+
   const code = normalizeSpeechErrorCode(kind, phase);
 
   switch (code) {
