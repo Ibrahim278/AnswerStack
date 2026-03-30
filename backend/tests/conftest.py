@@ -72,6 +72,13 @@ async def async_client(async_engine) -> AsyncGenerator[AsyncClient, None]:
         # Also override settings on app.state so background tasks use temp dir
         app.state.settings = get_settings()
 
+        # Provide minimal app.state stubs so endpoints that reference
+        # vector_repo or speech providers don't crash with AttributeError.
+        # None signals "not configured" — status endpoint derives health from this.
+        app.state.vector_repo = None
+        app.state.stt_provider = None
+        app.state.tts_provider = None
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
@@ -161,6 +168,12 @@ async def async_client_with_provider(async_engine, mock_openai_client) -> AsyncG
         provider_service._current_base_url = "http://mock-provider:1234/v1"
         provider_service._current_api_key = "mock-key"
         app.state.provider_service = provider_service
+
+        # Provide minimal app.state stubs for endpoints that check these attrs.
+        # None signals "not configured" — status endpoint derives health from this.
+        app.state.vector_repo = None
+        app.state.stt_provider = None
+        app.state.tts_provider = None
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

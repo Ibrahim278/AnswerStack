@@ -14,8 +14,8 @@ async def test_get_settings_returns_defaults(async_client):
     data = response.json()
 
     assert data["temperature"] == 0.7
-    assert data["chunk_size"] == 4000
-    assert data["chunk_overlap"] == 800
+    assert data["chunk_size"] == 2200
+    assert data["chunk_overlap"] == 250
     assert data["top_k"] == 5
     assert data["similarity_threshold"] == 0.3
     assert data["reranker_enabled"] is True

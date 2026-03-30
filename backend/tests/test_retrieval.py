@@ -149,23 +149,32 @@ async def test_retrieval_no_results_returns_empty(
 
 
 async def test_retrieval_all_below_threshold(
-    mock_vector_repo, mock_embedding_service, vector_results
+    mock_vector_repo, mock_embedding_service,
 ):
-    """CHAT-08: All reranked scores below threshold returns empty list."""
-    # Create a ranker that returns very low scores
-    low_ranker = MagicMock()
+    """CHAT-08: All results below similarity threshold returns empty list.
 
-    def low_score_rerank(request):
-        return [
-            {**p, "score": 0.05}  # All below any reasonable threshold
-            for p in request.passages[:5]
-        ]
+    The similarity threshold (1.0 - cosine_distance) is the only hard quality
+    gate. When no vectors pass, the result is empty regardless of reranker.
+    """
+    # Vector results with high distances → low similarity (all below 0.3)
+    low_quality_results = {
+        "ids": ["chunk-1", "chunk-2", "chunk-3"],
+        "documents": [
+            "Paris is the capital of France.",
+            "France is a country in Western Europe.",
+            "The Eiffel Tower is located in Paris.",
+        ],
+        "metadatas": [
+            {"document_name": "geography.txt", "document_id": "doc-1", "chunk_index": 0, "page_number": 1},
+            {"document_name": "geography.txt", "document_id": "doc-1", "chunk_index": 1, "page_number": 2},
+            {"document_name": "landmarks.txt", "document_id": "doc-2", "chunk_index": 0},
+        ],
+        "distances": [0.8, 0.9, 0.95],  # similarities: 0.2, 0.1, 0.05
+    }
+    mock_vector_repo.query = MagicMock(return_value=low_quality_results)
 
-    low_ranker.rerank = MagicMock(side_effect=low_score_rerank)
-
-    mock_vector_repo.query = MagicMock(return_value=vector_results)
-
-    service = RetrievalService(mock_vector_repo, mock_embedding_service, low_ranker)
+    ranker = MagicMock()
+    service = RetrievalService(mock_vector_repo, mock_embedding_service, ranker)
     project_id = uuid4()
 
     results = await service.retrieve(
@@ -177,6 +186,8 @@ async def test_retrieval_all_below_threshold(
     )
 
     assert results == []
+    # Reranker should never be called — vectors filtered before reranking
+    ranker.rerank.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
