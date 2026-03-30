@@ -1,53 +1,47 @@
 import { memo, useState } from 'react';
-import { BookOpen, Copy, Check, RefreshCw } from 'lucide-react';
+import { BookOpen } from 'lucide-react';
 import type { ChatMessageResponse } from '@/types';
 import { useChatStore } from '@/stores/chatStore';
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer';
-import { stripMarkdownAndCitations } from '@/utils/markdown';
+import { MessageActionBar } from '@/components/chat/MessageActionBar';
+import { SpeechInlineNotice } from '@/components/chat/SpeechInlineNotice';
 
 interface AssistantMessageProps {
   message: ChatMessageResponse;
   isLastAssistant: boolean;
   onRetry?: () => void;
+  showSpeech: boolean;
+  speechDisabled: boolean;
+  isSpeaking: boolean;
+  onToggleSpeech?: (messageId: string) => void;
 }
 
 /**
  * Left-aligned assistant message with full markdown rendering, citations,
  * code highlighting, and inline copy/retry actions.
  */
-function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantMessageProps) {
-  const [copied, setCopied] = useState(false);
+function AssistantMessageInner({
+  message,
+  isLastAssistant,
+  onRetry,
+  showSpeech,
+  speechDisabled,
+  isSpeaking,
+  onToggleSpeech,
+}: AssistantMessageProps) {
   const openSourcePanel = useChatStore((s) => s.openSourcePanel);
+  const speechError = useChatStore((s) => s.speechError);
+  const speechPlaybackErrorMessageId = useChatStore((s) => s.speechPlaybackErrorMessageId);
   const rawSources = message.sources_json;
   const sources = Array.isArray(rawSources)
     ? rawSources.filter((s) => s && typeof s === 'object' && s.chunk_text)
     : [];
-
-  const handleCopy = () => {
-    const plainText = stripMarkdownAndCitations(message.content);
-    // Fallback for non-secure contexts (e.g. LAN IP access)
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(plainText).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }).catch(() => fallbackCopy(plainText));
-    } else {
-      fallbackCopy(plainText);
-    }
-  };
-
-  const fallbackCopy = (text: string) => {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textarea);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const playbackNotice =
+    speechPlaybackErrorMessageId === message.id &&
+    speechError &&
+    (speechError.code === 'playback-blocked' || speechError.code === 'playback-interrupted')
+      ? speechError
+      : null;
 
   return (
     <div className="flex justify-start">
@@ -56,7 +50,7 @@ function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantM
         <MarkdownRenderer content={message.content} messageId={message.id} />
 
         {/* Footer: sources + copy + retry */}
-        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+        <div className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-2">
           {sources.length > 0 && (
             <button
               onClick={() => openSourcePanel(message.id)}
@@ -66,23 +60,19 @@ function AssistantMessageInner({ message, isLastAssistant, onRetry }: AssistantM
               {sources.length} source{sources.length !== 1 ? 's' : ''}
             </button>
           )}
-          <button
-            onClick={handleCopy}
-            className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Copy to clipboard"
-          >
-            {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-          </button>
-          {isLastAssistant && onRetry && (
-            <button
-              onClick={onRetry}
-              className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Retry response"
-            >
-              <RefreshCw className="w-3 h-3" />
-            </button>
-          )}
+          <MessageActionBar
+            content={message.content}
+            messageId={message.id}
+            showRetry={isLastAssistant}
+            onRetry={onRetry}
+            showSpeech={showSpeech}
+            speechDisabled={speechDisabled}
+            isSpeaking={isSpeaking}
+            onToggleSpeech={onToggleSpeech}
+          />
         </div>
+
+        {playbackNotice ? <div className="mt-3"><SpeechInlineNotice notice={playbackNotice} /></div> : null}
       </div>
     </div>
   );

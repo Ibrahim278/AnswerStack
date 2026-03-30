@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, RefreshCw } from 'lucide-react';
+import { Copy, Check, Play, RefreshCw, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -11,23 +11,56 @@ import { stripMarkdownAndCitations } from '@/utils/markdown';
 
 interface MessageActionBarProps {
   content: string;
+  messageId: string;
   onRetry?: () => void;
   showRetry: boolean;
+  showSpeech: boolean;
+  speechDisabled: boolean;
+  isSpeaking: boolean;
+  onToggleSpeech?: (messageId: string) => void;
 }
 
 /**
  * Hover action bar with Copy and Retry icons.
  * Appears on hover at bottom-right of assistant messages.
  */
-export function MessageActionBar({ content, onRetry, showRetry }: MessageActionBarProps) {
+export function MessageActionBar({
+  content,
+  messageId,
+  onRetry,
+  showRetry,
+  showSpeech,
+  speechDisabled,
+  isSpeaking,
+  onToggleSpeech,
+}: MessageActionBarProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
     const plainText = stripMarkdownAndCitations(content);
-    void navigator.clipboard.writeText(plainText).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(plainText).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch(() => fallbackCopy(plainText));
+      return;
+    }
+
+    fallbackCopy(plainText);
+  };
+
+  const fallbackCopy = (text: string) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -49,6 +82,26 @@ export function MessageActionBar({ content, onRetry, showRetry }: MessageActionB
             {copied ? 'Copied!' : 'Copy'}
           </TooltipContent>
         </Tooltip>
+
+        {showSpeech && onToggleSpeech && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => onToggleSpeech(messageId)}
+                disabled={speechDisabled && !isSpeaking}
+                aria-label={isSpeaking ? 'Stop reading aloud' : 'Read answer aloud'}
+              >
+                {isSpeaking ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {isSpeaking ? 'Stop reading aloud' : 'Read answer aloud'}
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {showRetry && onRetry && (
           <Tooltip>
