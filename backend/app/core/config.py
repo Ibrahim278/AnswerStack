@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     default_provider_model: str = "zai-org/glm-4.7-flash"
     default_embedding_model: str = "text-embedding-qwen3-embedding-4b@q8_0"
 
+    # Speech providers
+    elevenlabs_api_key: str = ""
+    tts_provider: str = "elevenlabs"  # "elevenlabs" | "kokoro" | "none"
+    stt_provider: str = "elevenlabs"  # "elevenlabs" | "none"
+    elevenlabs_tts_model: str = "eleven_multilingual_v2"
+    elevenlabs_tts_voice_id: str = ""  # empty = use first available
+    elevenlabs_stt_model: str = "scribe_v2"
+    kokoro_base_url: str = ""  # e.g. "http://localhost:8880"
+    kokoro_voice: str = "af_bella"
+
 
 @lru_cache
 def get_settings() -> Settings:
