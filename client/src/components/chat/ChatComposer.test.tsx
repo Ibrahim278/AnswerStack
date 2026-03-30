@@ -91,6 +91,19 @@ afterEach(() => {
 });
 
 describe('ChatComposer', () => {
+  it('renders textarea and send button always', () => {
+    render(<ComposerHarness stt="unavailable" />);
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+    expect(screen.getByLabelText('Send message')).toBeInTheDocument();
+  });
+
+  it('shows mic button when stt is available', () => {
+    render(<ComposerHarness stt="available" />);
+
+    expect(screen.getByLabelText('Hold to dictate your question')).toBeInTheDocument();
+  });
+
   it('keeps the microphone hidden when STT capability is unavailable', () => {
     render(<ComposerHarness stt="unavailable" />);
 
@@ -161,12 +174,37 @@ describe('ChatComposer', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('shows streaming banner when isStreaming', () => {
+    render(<ComposerHarness isStreaming />);
+
+    expect(
+      screen.getByText('Wait for the current answer to finish before dictating another question.'),
+    ).toBeInTheDocument();
+  });
+
   it('shows pending inline copy when the permission prompt is ignored', () => {
     render(<ComposerHarness microphonePermission="pending" />);
 
-    expect(screen.getByText('Microphone permission pending')).toBeInTheDocument();
+    expect(screen.getByText('Microphone access pending')).toBeInTheDocument();
     expect(
-      screen.getByText('The browser is still waiting for microphone permission. Approve or cancel the prompt, then try again.'),
+      screen.getByText('Allow microphone access to dictate your question.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows speech error notice for recognition errors', () => {
+    render(
+      <ComposerHarness
+        speechError={{
+          code: 'not-allowed',
+          title: 'Microphone access blocked',
+          message: 'Microphone access is blocked. Enable it in your browser settings, then hold to talk again.',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Microphone access blocked')).toBeInTheDocument();
+    expect(
+      screen.getByText('Microphone access is blocked. Enable it in your browser settings, then hold to talk again.'),
     ).toBeInTheDocument();
   });
 
@@ -179,7 +217,7 @@ describe('ChatComposer', () => {
         speechError={{
           code: 'not-allowed',
           title: 'Microphone access blocked',
-          message: 'Microphone access is blocked. Allow access in Chromium and try again.',
+          message: 'Microphone access is blocked. Enable it in your browser settings, then hold to talk again.',
         }}
       />,
     );
@@ -194,7 +232,7 @@ describe('ChatComposer', () => {
       notice: {
         code: 'not-allowed',
         title: 'Microphone access blocked',
-        message: 'Microphone access is blocked. Allow access in Chromium and try again.',
+        message: 'Microphone access is blocked. Enable it in your browser settings, then hold to talk again.',
       } satisfies SpeechErrorNotice,
     },
     {
@@ -202,7 +240,15 @@ describe('ChatComposer', () => {
       notice: {
         code: 'no-speech',
         title: 'No speech detected',
-        message: 'No speech was detected before recording ended. Try again and speak sooner.',
+        message: 'No speech detected. Hold to talk and speak before releasing.',
+      } satisfies SpeechErrorNotice,
+    },
+    {
+      name: 'network',
+      notice: {
+        code: 'network',
+        title: 'Speech service interrupted',
+        message: 'Speech service could not complete the request. Check your connection and try again.',
       } satisfies SpeechErrorNotice,
     },
   ])('shows inline $name recovery copy', ({ notice }) => {
@@ -212,6 +258,20 @@ describe('ChatComposer', () => {
     expect(screen.getByText(notice.message)).toBeInTheDocument();
   });
 
+  it('does not show playback errors as recognition notices', () => {
+    render(
+      <ComposerHarness
+        speechError={{
+          code: 'playback-blocked',
+          title: 'Playback blocked',
+          message: "Playback couldn't start. Click play again after interacting with the page.",
+        }}
+      />,
+    );
+
+    expect(screen.queryByText('Playback blocked')).not.toBeInTheDocument();
+  });
+
   it('disables the mic button while streaming', () => {
     render(<ComposerHarness isStreaming />);
 
@@ -219,5 +279,17 @@ describe('ChatComposer', () => {
     expect(
       screen.getByText('Wait for the current answer to finish before dictating another question.'),
     ).toBeInTheDocument();
+  });
+
+  it('send button disabled when input empty', () => {
+    render(<ComposerHarness initialValue="" />);
+
+    expect(screen.getByLabelText('Send message')).toBeDisabled();
+  });
+
+  it('send button enabled when input has text', () => {
+    render(<ComposerHarness initialValue="hello" />);
+
+    expect(screen.getByLabelText('Send message')).not.toBeDisabled();
   });
 });

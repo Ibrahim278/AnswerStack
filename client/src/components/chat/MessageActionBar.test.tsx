@@ -106,15 +106,6 @@ function createAssistantMessage(
   };
 }
 
-function createMockSynthesizeFn() {
-  const calls: string[] = [];
-  const synthesizeFn = vi.fn(async (text: string) => {
-    calls.push(text);
-    return new Blob(['fake-audio'], { type: 'audio/mpeg' });
-  });
-  return { synthesizeFn, calls };
-}
-
 function renderChatPage() {
   return render(
     <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/chat/${SESSION_ID}`]}>
@@ -195,7 +186,38 @@ afterEach(() => {
 });
 
 describe('MessageActionBar', () => {
-  it('keeps the speech button hidden when TTS capability is unavailable', () => {
+  it('renders copy button always', () => {
+    render(
+      <MessageActionBar
+        content="Answer"
+        messageId="answer-1"
+        showRetry={false}
+        showSpeech={false}
+        speechDisabled={false}
+        isSpeaking={false}
+      />,
+    );
+
+    expect(screen.getByLabelText('Copy to clipboard')).toBeInTheDocument();
+  });
+
+  it('shows play button when showSpeech is true', () => {
+    render(
+      <MessageActionBar
+        content="Answer"
+        messageId="answer-1"
+        showRetry={false}
+        showSpeech
+        speechDisabled={false}
+        isSpeaking={false}
+        onToggleSpeech={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Read answer aloud')).toBeInTheDocument();
+  });
+
+  it('keeps the speech button hidden when showSpeech is false', () => {
     render(
       <MessageActionBar
         content="Answer"
@@ -230,6 +252,23 @@ describe('MessageActionBar', () => {
     expect(onToggleSpeech).toHaveBeenCalledWith('answer-1');
   });
 
+  it('shows stop icon and label when isSpeaking', () => {
+    render(
+      <MessageActionBar
+        content="Answer"
+        messageId="answer-1"
+        showRetry={false}
+        showSpeech
+        speechDisabled={false}
+        isSpeaking
+        onToggleSpeech={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Stop reading aloud')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Read answer aloud')).not.toBeInTheDocument();
+  });
+
   it('swaps from "Read answer aloud" to "Stop reading aloud" for the active message', () => {
     const { rerender } = render(
       <MessageActionBar
@@ -260,7 +299,7 @@ describe('MessageActionBar', () => {
     expect(screen.getByLabelText('Stop reading aloud')).toBeInTheDocument();
   });
 
-  it('disables the play button while a new answer is generating', () => {
+  it('disables the play button when speechDisabled and not speaking', () => {
     render(
       <MessageActionBar
         content="Answer"
@@ -274,6 +313,53 @@ describe('MessageActionBar', () => {
     );
 
     expect(screen.getByLabelText('Read answer aloud')).toBeDisabled();
+  });
+
+  it('keeps play button enabled when speechDisabled but already speaking', () => {
+    render(
+      <MessageActionBar
+        content="Answer"
+        messageId="answer-1"
+        showRetry={false}
+        showSpeech
+        speechDisabled
+        isSpeaking
+        onToggleSpeech={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Stop reading aloud')).not.toBeDisabled();
+  });
+
+  it('shows retry button when showRetry true', () => {
+    render(
+      <MessageActionBar
+        content="Answer"
+        messageId="answer-1"
+        showRetry
+        showSpeech={false}
+        speechDisabled={false}
+        isSpeaking={false}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Retry response')).toBeInTheDocument();
+  });
+
+  it('hides retry button when showRetry false', () => {
+    render(
+      <MessageActionBar
+        content="Answer"
+        messageId="answer-1"
+        showRetry={false}
+        showSpeech={false}
+        speechDisabled={false}
+        isSpeaking={false}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Retry response')).not.toBeInTheDocument();
   });
 
   it('replaying the active message stops playback instead of creating overlap', async () => {
@@ -320,7 +406,7 @@ describe('AssistantMessage', () => {
       speechError: {
         code: 'playback-blocked',
         title: 'Playback blocked',
-        message: 'The browser blocked playback from starting. Interact with the page and try again.',
+        message: "Playback couldn't start. Click play again after interacting with the page.",
       },
       speechPlaybackErrorMessageId: message.id,
     });
@@ -338,7 +424,7 @@ describe('AssistantMessage', () => {
 
     expect(screen.getByText('Playback blocked')).toBeInTheDocument();
     expect(
-      screen.getByText('The browser blocked playback from starting. Interact with the page and try again.'),
+      screen.getByText("Playback couldn't start. Click play again after interacting with the page."),
     ).toBeInTheDocument();
   });
 });
