@@ -9,16 +9,18 @@ import { useProject } from '@/hooks/useProjects';
 import { useSessionList, useDeleteSession, useSessionDetail } from '@/hooks/useSessions';
 import { useChat } from '@/hooks/useChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
 import { detectSpeechCapabilities } from '@/lib/speech';
 import { useChatStore } from '@/stores/chatStore';
 import { isValidUuid } from '@/utils/isValidUuid';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { AssistantMessage } from '@/components/chat/AssistantMessage';
 import { ChatComposer } from '@/components/chat/ChatComposer';
-import { ChatMessage } from '@/components/chat/ChatMessage';
 import { StreamingMessage } from '@/components/chat/StreamingMessage';
 import { SourcePanel } from '@/components/chat/SourcePanel';
+import { UserMessage } from '@/components/chat/UserMessage';
 
 export default function ChatPage() {
   const { id, sessionId: routeSessionId } = useParams<{ id: string; sessionId?: string }>();
@@ -45,6 +47,7 @@ export default function ChatPage() {
   const speechPlaybackState = useChatStore((s) => s.speechPlaybackState);
   const speechError = useChatStore((s) => s.speechError);
   const speechCommittedPrefix = useChatStore((s) => s.speechCommittedPrefix);
+  const activePlaybackMessageId = useChatStore((s) => s.activePlaybackMessageId);
   const setSpeechCapabilities = useChatStore((s) => s.setSpeechCapabilities);
 
   const isSpeechRecording =
@@ -61,7 +64,7 @@ export default function ChatPage() {
     [isSpeechRecording, navigate, projectId, speechCommittedPrefix],
   );
 
-  const { sendMessage, stop, isStreaming } = useChat({
+  const { sendMessage, stop, retry, isStreaming } = useChat({
     projectId,
     onSessionCreated: handleSessionCreated,
   });
@@ -77,6 +80,12 @@ export default function ChatPage() {
     onCommit: (finalValue) => setInput(finalValue),
     onCancel: (restoreValue) => setInput(restoreValue),
   });
+  const getMessageText = useCallback(
+    (messageId: string) =>
+      messages.find((message) => message.id === messageId)?.content ?? '',
+    [messages],
+  );
+  const speechSynthesis = useSpeechSynthesis({ getMessageText });
   const {
     startCapture,
     commitCapture,
@@ -85,6 +94,14 @@ export default function ChatPage() {
   const cleanupSpeechRecognition = useCallback(
     () => speechRecognition.cleanup(),
     [speechRecognition.cleanup],
+  );
+  const stopSpeechPlayback = useCallback(
+    () => speechSynthesis.stopPlayback(),
+    [speechSynthesis.stopPlayback],
+  );
+  const cleanupSpeechSynthesis = useCallback(
+    () => speechSynthesis.cleanup(),
+    [speechSynthesis.cleanup],
   );
 
   const cancelRecordingIfActive = useCallback(() => {
@@ -98,8 +115,21 @@ export default function ChatPage() {
       return false;
     }
 
+    stopSpeechPlayback();
     return startCapture();
-  }, [isStreaming, startCapture]);
+  }, [isStreaming, startCapture, stopSpeechPlayback]);
+
+  const handleToggleSpeech = useCallback(
+    (messageId: string) => {
+      if (isSpeechRecording) {
+        cancelCapture();
+        setInput(speechCommittedPrefix);
+      }
+
+      speechSynthesis.playMessage(messageId);
+    },
+    [cancelCapture, isSpeechRecording, speechCommittedPrefix, speechSynthesis.playMessage],
+  );
 
   const speechController = {
     speechCapabilities,
@@ -138,9 +168,10 @@ export default function ChatPage() {
   useEffect(() => {
     if (previousRouteSessionIdRef.current !== routeSessionId) {
       cancelRecordingIfActive();
+      cleanupSpeechSynthesis();
       previousRouteSessionIdRef.current = routeSessionId;
     }
-  }, [cancelRecordingIfActive, routeSessionId]);
+  }, [cancelRecordingIfActive, cleanupSpeechSynthesis, routeSessionId]);
 
   useEffect(() => {
     if (isSpeechRecording && (speechPlaybackState === 'starting' || speechPlaybackState === 'playing')) {
@@ -152,7 +183,8 @@ export default function ChatPage() {
   useEffect(() => () => {
     cancelRecordingIfActive();
     cleanupSpeechRecognition();
-  }, [cancelRecordingIfActive, cleanupSpeechRecognition]);
+    cleanupSpeechSynthesis();
+  }, [cancelRecordingIfActive, cleanupSpeechRecognition, cleanupSpeechSynthesis]);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || isStreaming) return;
@@ -343,10 +375,22 @@ export default function ChatPage() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                     >
-                      <ChatMessage
-                        message={msg}
-                        isLastAssistant={idx === lastAssistantIdx}
-                      />
+                      {msg.role === 'user' ? (
+                        <UserMessage message={msg} />
+                      ) : (
+                        <AssistantMessage
+                          message={msg}
+                          isLastAssistant={idx === lastAssistantIdx}
+                          onRetry={idx === lastAssistantIdx ? retry : undefined}
+                          showSpeech={speechCapabilities.tts === 'available'}
+                          speechDisabled={isStreaming}
+                          isSpeaking={
+                            activePlaybackMessageId === msg.id &&
+                            speechPlaybackState === 'playing'
+                          }
+                          onToggleSpeech={handleToggleSpeech}
+                        />
+                      )}
                     </motion.div>
                   ))}
                 </AnimatePresence>
