@@ -11,7 +11,6 @@ import type {
 interface SpeechCapabilitiesState {
   stt: SpeechCapabilityState;
   tts: SpeechCapabilityState;
-  voicesAvailable: number;
 }
 
 interface ChatState {
@@ -77,7 +76,7 @@ export const useChatStore = create<ChatState>()((set) => ({
   streamError: null,
   sourcePanelOpen: false,
   activeSourceMsgId: null,
-  speechCapabilities: { stt: 'unavailable', tts: 'unavailable', voicesAvailable: 0 },
+  speechCapabilities: { stt: 'unavailable', tts: 'unavailable' },
   microphonePermission: 'unsupported',
   speechRecognitionState: 'unsupported',
   speechPlaybackState: 'idle',

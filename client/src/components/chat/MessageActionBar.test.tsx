@@ -348,7 +348,7 @@ describe('ChatPage speech playback coordination', () => {
     });
 
     useChatStore.setState({
-      speechCapabilities: { stt: 'available', tts: 'available', voicesAvailable: 0 },
+      speechCapabilities: { stt: 'available', tts: 'available' },
       speechRecognitionState: 'listening',
       speechCommittedPrefix: 'Draft question',
     });

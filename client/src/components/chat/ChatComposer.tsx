@@ -9,7 +9,6 @@ import { SpeechInlineNotice } from './SpeechInlineNotice';
 interface ChatComposerSpeechCapabilities {
   stt: SpeechCapabilityState;
   tts: SpeechCapabilityState;
-  voicesAvailable: number;
 }
 
 export interface ChatComposerSpeechController {

@@ -53,7 +53,6 @@ function ComposerHarness({
     speechCapabilities: {
       stt,
       tts: 'unavailable',
-      voicesAvailable: 0,
     },
     microphonePermission,
     speechRecognitionState: recognitionState,
