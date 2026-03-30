@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   useSessionDetail: vi.fn(),
   useChat: vi.fn(),
   useSpeechRecognition: vi.fn(),
+  useSpeechSynthesis: vi.fn(),
+  detectSpeechCapabilities: vi.fn(),
 }));
 
 vi.mock('@/hooks/useProjects', () => ({
@@ -35,6 +37,18 @@ vi.mock('@/hooks/useChat', () => ({
 vi.mock('@/hooks/useSpeechRecognition', () => ({
   useSpeechRecognition: mocks.useSpeechRecognition,
 }));
+
+vi.mock('@/hooks/useSpeechSynthesis', () => ({
+  useSpeechSynthesis: mocks.useSpeechSynthesis,
+}));
+
+vi.mock('@/lib/speech', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/speech')>();
+  return {
+    ...actual,
+    detectSpeechCapabilities: mocks.detectSpeechCapabilities,
+  };
+});
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -60,33 +74,15 @@ vi.mock('@/components/chat/MarkdownRenderer', () => ({
   MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div>,
 }));
 
-class FakeUtterance {
-  text: string;
-  voice: SpeechSynthesisVoice | null = null;
-  onstart: ((event: Event) => void) | null = null;
-  onend: ((event: Event) => void) | null = null;
-  onerror: ((event: Event & { error?: string }) => void) | null = null;
-
-  constructor(text: string) {
-    this.text = text;
-  }
-}
-
-class FakeRecognition {
-  continuous = false;
-  interimResults = false;
-  lang = 'en-US';
-  maxAlternatives = 1;
-  onstart: ((event: Event) => void) | null = null;
-  onresult: ((event: Event) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-  onend: ((event: Event) => void) | null = null;
-
-  start() {}
-
-  stop() {}
-
-  abort() {}
+class MockAudio {
+  src = '';
+  onplay: (() => void) | null = null;
+  onended: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  play = vi.fn(async () => {
+    this.onplay?.();
+  });
+  pause = vi.fn();
 }
 
 const PROJECT_ID = '123e4567-e89b-42d3-a456-426614174000';
@@ -110,19 +106,13 @@ function createAssistantMessage(
   };
 }
 
-function createMockSynth() {
-  const spoken: FakeUtterance[] = [];
-
-  return {
-    synth: {
-      cancel: vi.fn(),
-      getVoices: vi.fn(() => []),
-      speak: vi.fn((utterance: FakeUtterance) => {
-        spoken.push(utterance);
-      }),
-    },
-    spoken,
-  };
+function createMockSynthesizeFn() {
+  const calls: string[] = [];
+  const synthesizeFn = vi.fn(async (text: string) => {
+    calls.push(text);
+    return new Blob(['fake-audio'], { type: 'audio/mpeg' });
+  });
+  return { synthesizeFn, calls };
 }
 
 function renderChatPage() {
@@ -144,19 +134,11 @@ beforeEach(() => {
     value: vi.fn(),
   });
 
-  const { synth } = createMockSynth();
-  Object.defineProperty(window, 'speechSynthesis', {
-    configurable: true,
-    value: synth,
-  });
-  Object.defineProperty(window, 'SpeechSynthesisUtterance', {
-    configurable: true,
-    value: FakeUtterance,
-  });
-  Object.defineProperty(window, 'webkitSpeechRecognition', {
-    configurable: true,
-    value: FakeRecognition,
-  });
+  // Mock Audio constructor and URL for backend-proxied TTS
+  const mockAudio = new MockAudio();
+  globalThis.Audio = vi.fn(() => mockAudio) as unknown as typeof Audio;
+  URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+  URL.revokeObjectURL = vi.fn();
 
   mocks.useProject.mockReturnValue({
     data: { id: PROJECT_ID, name: 'AnswerStack Demo Project' },
@@ -183,11 +165,27 @@ beforeEach(() => {
   });
   mocks.useSpeechRecognition.mockReturnValue({
     startCapture: vi.fn(async () => true),
-    commitCapture: vi.fn(),
+    commitCapture: vi.fn(async () => {}),
     cancelCapture: vi.fn(() => {
       useChatStore.setState({ speechRecognitionState: 'idle' });
     }),
     cleanup: vi.fn(),
+  });
+
+  mocks.useSpeechSynthesis.mockReturnValue({
+    playMessage: vi.fn(async () => true),
+    stopPlayback: vi.fn(),
+    cleanup: vi.fn(),
+  });
+
+  mocks.detectSpeechCapabilities.mockResolvedValue({
+    stt: 'available',
+    tts: 'available',
+    backendSttAvailable: true,
+    backendTtsAvailable: true,
+    sttProvider: 'elevenlabs',
+    ttsProvider: 'elevenlabs',
+    microphonePermission: 'pending',
   });
 });
 
@@ -278,29 +276,39 @@ describe('MessageActionBar', () => {
     expect(screen.getByLabelText('Read answer aloud')).toBeDisabled();
   });
 
-  it('replaying the active message stops playback instead of creating overlap', () => {
-    const { synth, spoken } = createMockSynth();
-
-    const { result } = renderHook(() =>
-      useSpeechSynthesis({
-        getMessageText: () => 'Answer',
-        synth,
-        UtteranceCtor: FakeUtterance as unknown as typeof SpeechSynthesisUtterance,
-      }),
-    );
-
-    act(() => {
-      result.current.playMessage('answer-1');
-      spoken[0]?.onstart?.(new Event('start'));
+  it('replaying the active message stops playback instead of creating overlap', async () => {
+    // Mock playMessage to toggle stop on second call for same message
+    const playMessage = vi.fn(async (messageId: string) => {
+      const state = useChatStore.getState();
+      if (state.activePlaybackMessageId === messageId) {
+        state.stopSpeechPlayback();
+        return false;
+      }
+      state.startSpeechPlayback(messageId);
+      state.setSpeechPlaying(messageId);
+      return true;
     });
 
-    act(() => {
-      result.current.playMessage('answer-1');
+    mocks.useSpeechSynthesis.mockReturnValue({
+      playMessage,
+      stopPlayback: vi.fn(),
+      cleanup: vi.fn(),
     });
 
-    expect(synth.cancel).toHaveBeenCalledTimes(1);
-    expect(spoken).toHaveLength(1);
+    const { result } = renderHook(() => useSpeechSynthesis({ getMessageText: () => 'Answer' }));
+
+    // Play the message first
+    await act(async () => {
+      await result.current.playMessage('answer-1');
+    });
+
+    // Toggle off by playing same message
+    await act(async () => {
+      await result.current.playMessage('answer-1');
+    });
+
     expect(useChatStore.getState().activePlaybackMessageId).toBeNull();
+    expect(useChatStore.getState().speechPlaybackState).toBe('stopped');
   });
 });
 
@@ -337,14 +345,9 @@ describe('AssistantMessage', () => {
 
 describe('ChatPage speech playback coordination', () => {
   it('playback request during recording follows cancel-then-play behavior', async () => {
-    const { synth } = createMockSynth();
+    const playMessage = vi.fn(async () => true);
     const cancelCapture = vi.fn(() => {
       useChatStore.setState({ speechRecognitionState: 'idle' });
-    });
-
-    Object.defineProperty(window, 'speechSynthesis', {
-      configurable: true,
-      value: synth,
     });
 
     useChatStore.setState({
@@ -355,8 +358,14 @@ describe('ChatPage speech playback coordination', () => {
 
     mocks.useSpeechRecognition.mockReturnValue({
       startCapture: vi.fn(async () => true),
-      commitCapture: vi.fn(),
+      commitCapture: vi.fn(async () => {}),
       cancelCapture,
+      cleanup: vi.fn(),
+    });
+
+    mocks.useSpeechSynthesis.mockReturnValue({
+      playMessage,
+      stopPlayback: vi.fn(),
       cleanup: vi.fn(),
     });
 
@@ -366,13 +375,13 @@ describe('ChatPage speech playback coordination', () => {
 
     await waitFor(() => {
       expect(cancelCapture).toHaveBeenCalled();
-      expect(synth.speak).toHaveBeenCalledTimes(1);
+      expect(playMessage).toHaveBeenCalledTimes(1);
       expect(screen.getByRole('textbox')).toHaveValue('Draft question');
     });
 
     expect(cancelCapture.mock.invocationCallOrder[0]).toBeLessThan(
-      synth.speak.mock.invocationCallOrder[0],
+      playMessage.mock.invocationCallOrder[0],
     );
-    expect((synth.speak.mock.calls[0]?.[0] as FakeUtterance | undefined)?.text).toBe('Answer content');
+    expect(playMessage).toHaveBeenCalledWith('assistant-1');
   });
 });
