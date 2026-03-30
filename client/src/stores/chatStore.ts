@@ -1,5 +1,18 @@
 import { create } from 'zustand';
 import type { SSESourceItem, SSEError, StreamPhase } from '@/types';
+import type {
+  MicrophonePermissionState,
+  SpeechCapabilityState,
+  SpeechErrorNotice,
+  SpeechPlaybackState,
+  SpeechRecognitionState,
+} from '@/types/speech';
+
+interface SpeechCapabilitiesState {
+  stt: SpeechCapabilityState;
+  tts: SpeechCapabilityState;
+  voicesAvailable: number;
+}
 
 interface ChatState {
   // Streaming state (D-64)
@@ -14,6 +27,18 @@ interface ChatState {
   sourcePanelOpen: boolean;
   activeSourceMsgId: string | null;
 
+  // Speech state (Phase 08)
+  speechCapabilities: SpeechCapabilitiesState;
+  microphonePermission: MicrophonePermissionState;
+  speechRecognitionState: SpeechRecognitionState;
+  speechPlaybackState: SpeechPlaybackState;
+  speechDraft: string;
+  speechCommittedPrefix: string;
+  speechError: SpeechErrorNotice | null;
+  activePlaybackMessageId: string | null;
+  speechPlaybackErrorMessageId: string | null;
+  activeSpeechMode: 'none' | 'recording' | 'playback';
+
   // Actions
   startStream: (messageId: string) => void;
   setStreamPhase: (phase: StreamPhase) => void;
@@ -27,6 +52,19 @@ interface ChatState {
   openSourcePanel: (msgId: string) => void;
   closeSourcePanel: () => void;
   toggleSourcePanel: () => void;
+  setSpeechCapabilities: (capabilities: SpeechCapabilitiesState) => void;
+  setMicrophonePermission: (state: MicrophonePermissionState) => void;
+  beginSpeechCapture: (prefix: string) => void;
+  setSpeechListening: () => void;
+  setSpeechProcessing: () => void;
+  updateSpeechDraft: (draft: string) => void;
+  commitSpeechCapture: (finalText: string) => void;
+  cancelSpeechCapture: () => void;
+  setSpeechRecognitionError: (notice: SpeechErrorNotice) => void;
+  startSpeechPlayback: (messageId: string) => void;
+  setSpeechPlaying: (messageId: string) => void;
+  stopSpeechPlayback: () => void;
+  setSpeechPlaybackError: (messageId: string, notice: SpeechErrorNotice) => void;
 }
 
 export const useChatStore = create<ChatState>()((set) => ({
@@ -39,6 +77,16 @@ export const useChatStore = create<ChatState>()((set) => ({
   streamError: null,
   sourcePanelOpen: false,
   activeSourceMsgId: null,
+  speechCapabilities: { stt: 'unavailable', tts: 'unavailable', voicesAvailable: 0 },
+  microphonePermission: 'unsupported',
+  speechRecognitionState: 'unsupported',
+  speechPlaybackState: 'idle',
+  speechDraft: '',
+  speechCommittedPrefix: '',
+  speechError: null,
+  activePlaybackMessageId: null,
+  speechPlaybackErrorMessageId: null,
+  activeSpeechMode: 'none',
 
   // Actions
   startStream: (messageId) =>
@@ -111,4 +159,88 @@ export const useChatStore = create<ChatState>()((set) => ({
       sourcePanelOpen: !state.sourcePanelOpen,
       activeSourceMsgId: state.sourcePanelOpen ? null : state.activeSourceMsgId,
     })),
+
+  setSpeechCapabilities: (capabilities) =>
+    set((state) => ({
+      speechCapabilities: capabilities,
+      microphonePermission:
+        capabilities.stt === 'available' ? state.microphonePermission : 'unsupported',
+      speechRecognitionState:
+        capabilities.stt === 'available'
+          ? state.speechRecognitionState === 'unsupported'
+            ? 'idle'
+            : state.speechRecognitionState
+          : 'unsupported',
+    })),
+
+  setMicrophonePermission: (microphonePermission) => set({ microphonePermission }),
+
+  beginSpeechCapture: (prefix) =>
+    set({
+      speechRecognitionState: 'arming',
+      speechCommittedPrefix: prefix,
+      speechDraft: '',
+      speechError: null,
+      speechPlaybackErrorMessageId: null,
+      activeSpeechMode: 'recording',
+    }),
+
+  setSpeechListening: () => set({ speechRecognitionState: 'listening' }),
+
+  setSpeechProcessing: () => set({ speechRecognitionState: 'processing' }),
+
+  updateSpeechDraft: (speechDraft) => set({ speechDraft }),
+
+  commitSpeechCapture: (finalText) =>
+    set({
+      speechDraft: finalText,
+      speechRecognitionState: 'idle',
+      activeSpeechMode: 'none',
+    }),
+
+  cancelSpeechCapture: () =>
+    set({
+      speechDraft: '',
+      speechRecognitionState: 'idle',
+      activeSpeechMode: 'none',
+    }),
+
+  setSpeechRecognitionError: (notice) =>
+    set({
+      speechRecognitionState: 'error',
+      speechError: notice,
+      activeSpeechMode: 'none',
+    }),
+
+  startSpeechPlayback: (messageId) =>
+    set({
+      speechPlaybackState: 'starting',
+      activePlaybackMessageId: messageId,
+      speechPlaybackErrorMessageId: null,
+      speechError: null,
+      activeSpeechMode: 'playback',
+    }),
+
+  setSpeechPlaying: (messageId) =>
+    set({
+      speechPlaybackState: 'playing',
+      activePlaybackMessageId: messageId,
+      activeSpeechMode: 'playback',
+    }),
+
+  stopSpeechPlayback: () =>
+    set({
+      speechPlaybackState: 'stopped',
+      activePlaybackMessageId: null,
+      activeSpeechMode: 'none',
+    }),
+
+  setSpeechPlaybackError: (messageId, notice) =>
+    set({
+      speechPlaybackState: 'error',
+      speechError: notice,
+      speechPlaybackErrorMessageId: messageId,
+      activePlaybackMessageId: null,
+      activeSpeechMode: 'none',
+    }),
 }));
