@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +9,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        populate_by_name=True,
     )
 
     # Application
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
     default_embedding_model: str = "text-embedding-qwen3-embedding-4b@q8_0"
 
     # Speech providers
-    elevenlabs_api_key: str = ""
+    elevenlabs_api_key: str = Field("", validation_alias=AliasChoices("ELEVEN_LABS_KEY", "ELEVENLABS_API_KEY"))
     tts_provider: str = "elevenlabs"  # "elevenlabs" | "kokoro" | "none"
     stt_provider: str = "elevenlabs"  # "elevenlabs" | "none"
     elevenlabs_tts_model: str = "eleven_multilingual_v2"
