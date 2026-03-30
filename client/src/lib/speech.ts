@@ -217,9 +217,8 @@ export function buildSpeechErrorNotice(
   if (kind === 'pending') {
     return {
       code: 'unknown',
-      title: 'Microphone permission pending',
-      message:
-        'Chromium is still waiting for a microphone decision. Allow access or cancel the prompt and try again.',
+      title: 'Microphone access pending',
+      message: 'Allow microphone access to dictate your question.',
     };
   }
 
@@ -239,7 +238,7 @@ export function buildSpeechErrorNotice(
         message:
           phase === 'playback'
             ? 'Playback could not start. Interact with the page and try again.'
-            : 'Microphone access is blocked. Allow access in Chromium and try again.',
+            : 'Microphone access is blocked. Enable it in your browser settings, then hold to talk again.',
       };
     case 'audio-capture':
       return {
@@ -251,7 +250,7 @@ export function buildSpeechErrorNotice(
       return {
         code,
         title: 'No speech detected',
-        message: 'No speech was detected before recording ended. Try again and speak sooner.',
+        message: 'No speech detected. Hold to talk and speak before releasing.',
       };
     case 'aborted':
       return {
@@ -263,19 +262,19 @@ export function buildSpeechErrorNotice(
       return {
         code,
         title: 'Speech service interrupted',
-        message: 'Speech recognition lost its network connection. Retry once the browser is back online.',
+        message: 'Speech service could not complete the request. Check your connection and try again.',
       };
     case 'playback-blocked':
       return {
         code,
         title: 'Playback blocked',
-        message: 'The browser blocked playback from starting. Interact with the page and try again.',
+        message: "Playback couldn't start. Click play again after interacting with the page.",
       };
     case 'playback-interrupted':
       return {
         code,
         title: 'Playback interrupted',
-        message: 'Playback stopped before the answer finished. Start it again when ready.',
+        message: 'Playback stopped. Press play again to restart.',
       };
     default:
       return {

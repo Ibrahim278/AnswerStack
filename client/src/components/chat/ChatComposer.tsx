@@ -84,9 +84,8 @@ export function ChatComposer({
     microphonePermission === 'pending'
       ? {
           code: 'unknown' as const,
-          title: 'Microphone permission pending',
-          message:
-            'Chromium is still waiting for a microphone decision. Allow access or cancel the prompt and try again.',
+          title: 'Microphone access pending',
+          message: 'Allow microphone access to dictate your question.',
         }
       : isRecognitionNotice(speechError)
         ? speechError

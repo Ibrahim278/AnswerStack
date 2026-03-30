@@ -153,9 +153,16 @@ export default function ChatPage() {
   }, [messages, accumulatedTokens]);
 
   useEffect(() => {
+    let cancelled = false;
     void detectSpeechCapabilities().then((caps) => {
-      setSpeechCapabilities({ stt: caps.stt, tts: caps.tts });
+      if (!cancelled) {
+        setSpeechCapabilities({ stt: caps.stt, tts: caps.tts });
+        if (caps.microphonePermission !== 'unsupported') {
+          useChatStore.getState().setMicrophonePermission(caps.microphonePermission);
+        }
+      }
     });
+    return () => { cancelled = true; };
   }, [setSpeechCapabilities]);
 
   useEffect(() => {
