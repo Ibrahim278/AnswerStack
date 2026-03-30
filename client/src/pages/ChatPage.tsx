@@ -397,6 +397,10 @@ export default function ChatPage() {
                             activePlaybackMessageId === msg.id &&
                             speechPlaybackState === 'playing'
                           }
+                          isLoadingSpeech={
+                            activePlaybackMessageId === msg.id &&
+                            speechPlaybackState === 'starting'
+                          }
                           onToggleSpeech={handleToggleSpeech}
                         />
                       )}

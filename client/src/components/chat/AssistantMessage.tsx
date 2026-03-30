@@ -13,6 +13,7 @@ interface AssistantMessageProps {
   showSpeech: boolean;
   speechDisabled: boolean;
   isSpeaking: boolean;
+  isLoadingSpeech: boolean;
   onToggleSpeech?: (messageId: string) => void;
 }
 
@@ -27,6 +28,7 @@ function AssistantMessageInner({
   showSpeech,
   speechDisabled,
   isSpeaking,
+  isLoadingSpeech,
   onToggleSpeech,
 }: AssistantMessageProps) {
   const openSourcePanel = useChatStore((s) => s.openSourcePanel);
@@ -68,6 +70,7 @@ function AssistantMessageInner({
             showSpeech={showSpeech}
             speechDisabled={speechDisabled}
             isSpeaking={isSpeaking}
+            isLoadingSpeech={isLoadingSpeech}
             onToggleSpeech={onToggleSpeech}
           />
         </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Play, RefreshCw, Square } from 'lucide-react';
+import { Copy, Check, Play, RefreshCw, Square, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -17,6 +17,7 @@ interface MessageActionBarProps {
   showSpeech: boolean;
   speechDisabled: boolean;
   isSpeaking: boolean;
+  isLoadingSpeech: boolean;
   onToggleSpeech?: (messageId: string) => void;
 }
 
@@ -32,6 +33,7 @@ export function MessageActionBar({
   showSpeech,
   speechDisabled,
   isSpeaking,
+  isLoadingSpeech,
   onToggleSpeech,
 }: MessageActionBarProps) {
   const [copied, setCopied] = useState(false);
@@ -91,10 +93,16 @@ export function MessageActionBar({
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => onToggleSpeech(messageId)}
-                disabled={speechDisabled && !isSpeaking}
-                aria-label={isSpeaking ? 'Stop reading aloud' : 'Read answer aloud'}
+                disabled={(speechDisabled || isLoadingSpeech) && !isSpeaking}
+                aria-label={isSpeaking ? 'Stop reading aloud' : isLoadingSpeech ? 'Loading audio...' : 'Read answer aloud'}
               >
-                {isSpeaking ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                {isLoadingSpeech ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : isSpeaking ? (
+                  <Square className="w-3.5 h-3.5" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">

@@ -64,7 +64,13 @@ export async function synthesizeAudio(
     throw new Error(body?.message || `Synthesis failed: ${response.status}`);
   }
 
-  return response.blob();
+  const blob = await response.blob();
+  // Ensure the blob has the correct MIME type for Audio element playback.
+  // Some proxies strip content-type, leaving blob.type empty which breaks new Audio(url).
+  if (!blob.type || blob.type === 'application/octet-stream') {
+    return new Blob([blob], { type: 'audio/mpeg' });
+  }
+  return blob;
 }
 
 export async function getSpeechCapabilities(): Promise<SpeechCapabilitiesResponse> {
