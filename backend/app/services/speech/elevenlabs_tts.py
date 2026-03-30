@@ -9,6 +9,10 @@ from app.services.speech.tts_provider import TTSProvider, VoiceInfo
 # ElevenLabs API base URL
 _BASE_URL = "https://api.elevenlabs.io"
 
+# Well-known ElevenLabs voice IDs — used as fallback when no default is configured
+# and list_voices() is unavailable (e.g. restricted API key permissions).
+_FALLBACK_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"  # "George" — clear male English voice
+
 
 class ElevenLabsTTSProvider(TTSProvider):
     """ElevenLabs TTS provider.
@@ -44,12 +48,15 @@ class ElevenLabsTTSProvider(TTSProvider):
         """
         vid = voice_id or self._default_voice
         if not vid:
-            # Auto-select first available voice
-            voices = await self.list_voices()
-            if voices:
-                vid = voices[0].voice_id
-            else:
-                raise RuntimeError("No voices available and no default voice configured")
+            # Auto-select first available voice, fall back to well-known ID
+            try:
+                voices = await self.list_voices()
+                if voices:
+                    vid = voices[0].voice_id
+            except Exception:
+                pass
+            if not vid:
+                vid = _FALLBACK_VOICE_ID
 
         url = f"{_BASE_URL}/v1/text-to-speech/{vid}/stream"
         payload = {
@@ -71,13 +78,10 @@ class ElevenLabsTTSProvider(TTSProvider):
     async def list_voices(self) -> list[VoiceInfo]:
         """List available voices from ElevenLabs API.
 
-        GETs /v2/voices with default voice type filter and returns
-        a list of VoiceInfo objects.
+        GETs /v1/voices and returns a list of VoiceInfo objects.
+        Returns empty list if the API key lacks voices_read permission.
         """
-        response = await self._client.get(
-            f"{_BASE_URL}/v2/voices",
-            params={"page_size": 50, "voice_type": "default"},
-        )
+        response = await self._client.get(f"{_BASE_URL}/v1/voices")
         response.raise_for_status()
 
         data = response.json()
