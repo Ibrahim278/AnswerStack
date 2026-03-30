@@ -2,55 +2,54 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as speechLib from '@/lib/speech';
 import { useChatStore } from '@/stores/chatStore';
-import type {
-  MicrophonePermissionState,
-  SpeechRecognitionEventLike,
-  SpeechRecognitionLike,
-} from '@/types/speech';
+import type { AudioCapture, AudioCaptureResult } from '@/lib/audioCapture';
+import type { MicrophonePermissionState } from '@/types/speech';
 import { useSpeechRecognition } from './useSpeechRecognition';
 
 function resetChatStore() {
   useChatStore.setState(useChatStore.getInitialState(), true);
 }
 
-function createRecognitionResult(transcript: string): SpeechRecognitionEventLike {
+function createMockStream(): MediaStream {
+  const stopFn = vi.fn();
   return {
-    resultIndex: 0,
-    results: {
-      length: 1,
-      0: {
-        isFinal: false,
-        length: 1,
-        0: { transcript },
-      },
-    },
-  } as unknown as SpeechRecognitionEventLike;
+    getTracks: () => [{ stop: stopFn, kind: 'audio', id: 'track-1' }],
+  } as unknown as MediaStream;
 }
 
-function createMockRecognition() {
-  const recognition: SpeechRecognitionLike = {
-    continuous: true,
-    interimResults: false,
-    lang: '',
-    maxAlternatives: 0,
-    onstart: null,
-    onresult: null,
-    onerror: null,
-    onend: null,
-    start: vi.fn(),
-    stop: vi.fn(),
-    abort: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
+function createMockCapture(overrides?: Partial<AudioCapture>): AudioCapture {
+  let active = false;
+
+  return {
+    start: vi.fn(() => {
+      active = true;
+    }),
+    stop: vi.fn(
+      () =>
+        new Promise<AudioCaptureResult>((resolve) => {
+          active = false;
+          resolve({
+            blob: new Blob(['fake-audio-data'], { type: 'audio/webm' }),
+            mimeType: 'audio/webm',
+            durationMs: 1500,
+          });
+        }),
+    ),
+    cancel: vi.fn(() => {
+      active = false;
+    }),
+    isActive: vi.fn(() => active),
+    ...overrides,
   };
-
-  return recognition;
 }
 
-describe('useSpeechRecognition', () => {
+describe('useSpeechRecognition (backend-proxied)', () => {
   beforeEach(() => {
     resetChatStore();
+    useChatStore.setState({
+      speechCapabilities: { stt: 'available', tts: 'unavailable' },
+      speechRecognitionState: 'idle',
+    });
     vi.restoreAllMocks();
     vi.spyOn(speechLib, 'watchMicrophonePermission').mockResolvedValue(() => {});
   });
@@ -59,19 +58,79 @@ describe('useSpeechRecognition', () => {
     resetChatStore();
   });
 
-  it('starts, renders interim text, and commits while preserving the original prefix', async () => {
-    const recognition = createMockRecognition();
-    const onInterimText = vi.fn();
-    const onCommit = vi.fn();
+  it('startCapture returns true and transitions to listening on success', async () => {
+    const mockStream = createMockStream();
+    const mockCapture = createMockCapture();
+    const onStart = vi.fn();
+
+    const { result } = renderHook(() =>
+      useSpeechRecognition({
+        value: 'Prefix: ',
+        onInterimText: vi.fn(),
+        onCommit: vi.fn(),
+        onCancel: vi.fn(),
+        onStart,
+        getUserMediaFn: async () => mockStream,
+        createCaptureFn: () => mockCapture,
+        transcribeFn: async () => ({ text: 'hello' }),
+        queryPermission: async () => 'granted',
+      }),
+    );
+
+    let started: boolean | undefined;
+    await act(async () => {
+      started = await result.current.startCapture();
+    });
+
+    expect(started).toBe(true);
+    expect(mockCapture.start).toHaveBeenCalledTimes(1);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().speechRecognitionState).toBe('listening');
+  });
+
+  it('startCapture returns false and shows error on permission denied (getUserMedia rejects)', async () => {
     const onCancel = vi.fn();
+
+    const { result } = renderHook(() =>
+      useSpeechRecognition({
+        value: 'My question',
+        onInterimText: vi.fn(),
+        onCommit: vi.fn(),
+        onCancel,
+        getUserMediaFn: async () => {
+          const err = new DOMException('Permission denied', 'NotAllowedError');
+          throw err;
+        },
+        createCaptureFn: () => createMockCapture(),
+        queryPermission: async () => 'granted',
+      }),
+    );
+
+    let started: boolean | undefined;
+    await act(async () => {
+      started = await result.current.startCapture();
+    });
+
+    expect(started).toBe(false);
+    expect(onCancel).toHaveBeenCalledWith('My question');
+    expect(useChatStore.getState().speechError?.code).toBe('not-allowed');
+  });
+
+  it('commitCapture sends audio to transcribeAudio and commits transcript', async () => {
+    const mockStream = createMockStream();
+    const mockCapture = createMockCapture();
+    const onCommit = vi.fn();
+    const transcribeFn = vi.fn(async () => ({ text: 'Hello world' }));
 
     const { result } = renderHook(() =>
       useSpeechRecognition({
         value: 'Existing: ',
-        onInterimText,
+        onInterimText: vi.fn(),
         onCommit,
-        onCancel,
-        recognitionFactory: () => recognition,
+        onCancel: vi.fn(),
+        getUserMediaFn: async () => mockStream,
+        createCaptureFn: () => mockCapture,
+        transcribeFn,
         queryPermission: async () => 'granted',
       }),
     );
@@ -80,40 +139,45 @@ describe('useSpeechRecognition', () => {
       await result.current.startCapture();
     });
 
-    expect(recognition.continuous).toBe(false);
-    expect(recognition.interimResults).toBe(true);
-    expect(recognition.lang).toBe('en-US');
-    expect(recognition.maxAlternatives).toBe(1);
-
-    act(() => {
-      recognition.onstart?.(new Event('start'));
-      recognition.onresult?.(createRecognitionResult('hello world'));
+    await act(async () => {
+      await result.current.commitCapture();
     });
 
-    expect(onInterimText).toHaveBeenCalledWith('Existing: hello world');
-    expect(useChatStore.getState().speechDraft).toBe('Existing: hello world');
-
-    act(() => {
-      result.current.commitCapture();
-    });
-
-    expect(recognition.stop).toHaveBeenCalledTimes(1);
-    expect(onCommit).toHaveBeenCalledWith('Existing: hello world');
+    expect(mockCapture.stop).toHaveBeenCalledTimes(1);
+    expect(transcribeFn).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'audio/webm',
+      'en',
+    );
+    expect(onCommit).toHaveBeenCalledWith('Existing: Hello world');
     expect(useChatStore.getState().speechRecognitionState).toBe('idle');
-    expect(useChatStore.getState().activeSpeechMode).toBe('none');
   });
 
-  it('restores the committed prefix when capture is cancelled', async () => {
-    const recognition = createMockRecognition();
+  it('commitCapture shows no-speech error for tiny blob', async () => {
+    const mockStream = createMockStream();
+    const tinyCapture = createMockCapture({
+      stop: vi.fn(
+        () =>
+          new Promise<AudioCaptureResult>((resolve) => {
+            resolve({
+              blob: new Blob([], { type: 'audio/webm' }),
+              mimeType: 'audio/webm',
+              durationMs: 100,
+            });
+          }),
+      ),
+    });
     const onCancel = vi.fn();
 
     const { result } = renderHook(() =>
       useSpeechRecognition({
-        value: 'Draft: ',
+        value: 'Draft',
         onInterimText: vi.fn(),
         onCommit: vi.fn(),
         onCancel,
-        recognitionFactory: () => recognition,
+        getUserMediaFn: async () => mockStream,
+        createCaptureFn: () => tinyCapture,
+        transcribeFn: async () => ({ text: '' }),
         queryPermission: async () => 'granted',
       }),
     );
@@ -122,19 +186,17 @@ describe('useSpeechRecognition', () => {
       await result.current.startCapture();
     });
 
-    act(() => {
-      recognition.onstart?.(new Event('start'));
-      recognition.onresult?.(createRecognitionResult('partial transcript'));
-      result.current.cancelCapture();
+    await act(async () => {
+      await result.current.commitCapture();
     });
 
-    expect(recognition.abort).toHaveBeenCalledTimes(1);
-    expect(onCancel).toHaveBeenCalledWith('Draft: ');
-    expect(useChatStore.getState().speechDraft).toBe('');
-    expect(useChatStore.getState().speechRecognitionState).toBe('idle');
+    expect(useChatStore.getState().speechError?.code).toBe('no-speech');
+    expect(onCancel).toHaveBeenCalledWith('Draft');
   });
 
-  it('surfaces a stable pending notice when the microphone prompt is ignored', async () => {
+  it('commitCapture shows network error when transcription fails', async () => {
+    const mockStream = createMockStream();
+    const mockCapture = createMockCapture();
     const onCancel = vi.fn();
 
     const { result } = renderHook(() =>
@@ -143,9 +205,12 @@ describe('useSpeechRecognition', () => {
         onInterimText: vi.fn(),
         onCommit: vi.fn(),
         onCancel,
-        recognitionFactory: createMockRecognition,
-        queryPermission: async () => 'prompt',
-        requestPreflight: async () => ({ ok: false, reason: 'pending' }),
+        getUserMediaFn: async () => mockStream,
+        createCaptureFn: () => mockCapture,
+        transcribeFn: async () => {
+          throw new Error('Network error');
+        },
+        queryPermission: async () => 'granted',
       }),
     );
 
@@ -153,16 +218,102 @@ describe('useSpeechRecognition', () => {
       await result.current.startCapture();
     });
 
-    expect(onCancel).toHaveBeenCalledWith('Question');
-    expect(useChatStore.getState().microphonePermission).toBe('pending');
-    expect(useChatStore.getState().speechError).toMatchObject({
-      title: 'Microphone permission pending',
-      message: expect.stringContaining('Chromium is still waiting'),
+    await act(async () => {
+      await result.current.commitCapture();
     });
+
+    expect(useChatStore.getState().speechError?.code).toBe('network');
+    expect(onCancel).toHaveBeenCalledWith('Question');
   });
 
-  it('downgrades to denied and cancels an active capture when permission is revoked', async () => {
-    const recognition = createMockRecognition();
+  it('cancelCapture stops recorder and restores composer text', async () => {
+    const mockStream = createMockStream();
+    const mockCapture = createMockCapture();
+    const onCancel = vi.fn();
+
+    const { result } = renderHook(() =>
+      useSpeechRecognition({
+        value: 'Restore me',
+        onInterimText: vi.fn(),
+        onCommit: vi.fn(),
+        onCancel,
+        getUserMediaFn: async () => mockStream,
+        createCaptureFn: () => mockCapture,
+        queryPermission: async () => 'granted',
+      }),
+    );
+
+    await act(async () => {
+      await result.current.startCapture();
+    });
+
+    act(() => {
+      result.current.cancelCapture();
+    });
+
+    expect(mockCapture.cancel).toHaveBeenCalledTimes(1);
+    expect(onCancel).toHaveBeenCalledWith('Restore me');
+    expect(useChatStore.getState().speechDraft).toBe('');
+    expect(useChatStore.getState().speechRecognitionState).toBe('idle');
+  });
+
+  it('cleanup releases media stream tracks', async () => {
+    const mockStream = createMockStream();
+    const mockCapture = createMockCapture();
+
+    const { result } = renderHook(() =>
+      useSpeechRecognition({
+        value: '',
+        onInterimText: vi.fn(),
+        onCommit: vi.fn(),
+        onCancel: vi.fn(),
+        getUserMediaFn: async () => mockStream,
+        createCaptureFn: () => mockCapture,
+        queryPermission: async () => 'granted',
+      }),
+    );
+
+    await act(async () => {
+      await result.current.startCapture();
+    });
+
+    act(() => {
+      result.current.cleanup();
+    });
+
+    expect(mockCapture.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('startCapture with audio-capture error maps correctly', async () => {
+    const onCancel = vi.fn();
+
+    const { result } = renderHook(() =>
+      useSpeechRecognition({
+        value: '',
+        onInterimText: vi.fn(),
+        onCommit: vi.fn(),
+        onCancel,
+        getUserMediaFn: async () => {
+          const err = new DOMException('No audio device', 'NotFoundError');
+          throw err;
+        },
+        createCaptureFn: () => createMockCapture(),
+        queryPermission: async () => 'granted',
+      }),
+    );
+
+    let started: boolean | undefined;
+    await act(async () => {
+      started = await result.current.startCapture();
+    });
+
+    expect(started).toBe(false);
+    expect(useChatStore.getState().speechError?.code).toBe('audio-capture');
+  });
+
+  it('downgrades to denied and cancels active capture when permission is revoked', async () => {
+    const mockStream = createMockStream();
+    const mockCapture = createMockCapture();
     const onCancel = vi.fn();
     let watcher: ((state: MicrophonePermissionState) => void) | undefined;
 
@@ -177,39 +328,68 @@ describe('useSpeechRecognition', () => {
         onInterimText: vi.fn(),
         onCommit: vi.fn(),
         onCancel,
-        recognitionFactory: () => recognition,
+        getUserMediaFn: async () => mockStream,
+        createCaptureFn: () => mockCapture,
         queryPermission: async () => 'granted',
       }),
     );
 
     await act(async () => {
       await result.current.startCapture();
-    });
-
-    act(() => {
-      recognition.onstart?.(new Event('start'));
     });
 
     act(() => {
       watcher?.('denied');
     });
 
-    expect(recognition.abort).toHaveBeenCalledTimes(1);
+    expect(mockCapture.cancel).toHaveBeenCalledTimes(1);
     expect(useChatStore.getState().microphonePermission).toBe('denied');
     expect(useChatStore.getState().speechError?.code).toBe('not-allowed');
     expect(onCancel).toHaveBeenCalledWith('Restore me');
   });
 
-  it('maps no-speech and not-allowed recognition errors to stable notices', async () => {
-    const recognition = createMockRecognition();
+  it('startCapture returns false when preflight reports pending permission', async () => {
+    const onCancel = vi.fn();
+
+    const { result } = renderHook(() =>
+      useSpeechRecognition({
+        value: 'Question',
+        onInterimText: vi.fn(),
+        onCommit: vi.fn(),
+        onCancel,
+        getUserMediaFn: async () => createMockStream(),
+        createCaptureFn: () => createMockCapture(),
+        queryPermission: async () => 'prompt',
+        requestPreflight: async () => ({ ok: false, reason: 'pending' }),
+      }),
+    );
+
+    let started: boolean | undefined;
+    await act(async () => {
+      started = await result.current.startCapture();
+    });
+
+    expect(started).toBe(false);
+    expect(onCancel).toHaveBeenCalledWith('Question');
+    expect(useChatStore.getState().microphonePermission).toBe('pending');
+  });
+
+  it('60-second timeout auto-commits recording', async () => {
+    vi.useFakeTimers();
+    const mockStream = createMockStream();
+    const mockCapture = createMockCapture();
+    const onCommit = vi.fn();
+    const transcribeFn = vi.fn(async () => ({ text: 'timeout result' }));
 
     const { result } = renderHook(() =>
       useSpeechRecognition({
         value: '',
         onInterimText: vi.fn(),
-        onCommit: vi.fn(),
+        onCommit,
         onCancel: vi.fn(),
-        recognitionFactory: () => recognition,
+        getUserMediaFn: async () => mockStream,
+        createCaptureFn: () => mockCapture,
+        transcribeFn,
         queryPermission: async () => 'granted',
       }),
     );
@@ -218,28 +398,18 @@ describe('useSpeechRecognition', () => {
       await result.current.startCapture();
     });
 
-    act(() => {
-      recognition.onerror?.({ error: 'no-speech' } as Event & { error: string });
-    });
-
-    expect(useChatStore.getState().speechError).toMatchObject({
-      code: 'no-speech',
-      title: 'No speech detected',
-    });
-
+    // Advance timer to 60 seconds
     await act(async () => {
-      await result.current.startCapture();
+      vi.advanceTimersByTime(60000);
     });
 
-    act(() => {
-      recognition.onerror?.({ error: 'not-allowed' } as Event & { error: string });
-    });
-
+    // Wait for the async commitCapture chain to complete
     await waitFor(() => {
-      expect(useChatStore.getState().speechError).toMatchObject({
-        code: 'not-allowed',
-        title: 'Microphone access blocked',
-      });
+      expect(transcribeFn).toHaveBeenCalled();
     });
+
+    expect(onCommit).toHaveBeenCalledWith('timeout result');
+
+    vi.useRealTimers();
   });
 });
