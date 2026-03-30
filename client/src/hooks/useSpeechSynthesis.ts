@@ -2,53 +2,55 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   buildSpeechErrorNotice,
   getPlainSpeechText,
-  resolveSpeechSynthesisVoice,
 } from '@/lib/speech';
+import { synthesizeAudio } from '@/api/speech';
 import { useChatStore } from '@/stores/chatStore';
-import type { SpeechSynthesisLike } from '@/types/speech';
 
 interface UseSpeechSynthesisOptions {
   getMessageText: (messageId: string) => string;
-  synth?: SpeechSynthesisLike;
-  UtteranceCtor?: typeof SpeechSynthesisUtterance;
-}
-
-interface SpeechSynthesisEventLike extends Event {
-  error?: string;
+  synthesizeFn?: (text: string, voiceId?: string, signal?: AbortSignal) => Promise<Blob>;
 }
 
 interface UseSpeechSynthesisResult {
-  playMessage: (messageId: string) => boolean;
+  playMessage: (messageId: string) => Promise<boolean>;
   stopPlayback: () => void;
   cleanup: () => void;
 }
 
-function normalizePlaybackError(kind?: string) {
-  switch (kind) {
-    case 'not-allowed':
-    case 'service-not-allowed':
-      return 'playback-blocked';
-    case 'interrupted':
-    case 'canceled':
-    case 'cancelled':
-    case 'aborted':
-      return 'playback-interrupted';
-    default:
-      return kind ?? 'unknown';
-  }
-}
-
 export function useSpeechSynthesis({
   getMessageText,
-  synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined,
-  UtteranceCtor = typeof window !== 'undefined' ? window.SpeechSynthesisUtterance : undefined,
+  synthesizeFn,
 }: UseSpeechSynthesisOptions): UseSpeechSynthesisResult {
-  const lastVoiceUriRef = useRef<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const revokeCurrentUrl = useCallback(() => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  }, []);
 
   const stopPlayback = useCallback(() => {
-    synth?.cancel();
+    // Abort any in-flight fetch
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    // Clean up audio element
+    const audio = audioRef.current;
+    if (audio) {
+      audio.onplay = null;
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.src = '';
+      audioRef.current = null;
+    }
+
+    revokeCurrentUrl();
     useChatStore.getState().stopSpeechPlayback();
-  }, [synth]);
+  }, [revokeCurrentUrl]);
 
   const cleanup = useCallback(() => {
     stopPlayback();
@@ -57,74 +59,101 @@ export function useSpeechSynthesis({
   useEffect(() => cleanup, [cleanup]);
 
   const playMessage = useCallback(
-    (messageId: string) => {
+    async (messageId: string): Promise<boolean> => {
       const state = useChatStore.getState();
       const { activePlaybackMessageId } = state;
 
+      // Toggle off if same message
       if (activePlaybackMessageId === messageId) {
         stopPlayback();
         return false;
       }
 
-      if (!synth || !UtteranceCtor) {
-        state.setSpeechPlaybackError(messageId, buildSpeechErrorNotice('not-supported', 'playback'));
-        return false;
-      }
-
+      // Stop any current playback
       if (activePlaybackMessageId) {
-        synth.cancel();
+        stopPlayback();
       }
-
-      const text = getPlainSpeechText(getMessageText(messageId));
-      const utterance = new UtteranceCtor(text);
-      const { voice } = resolveSpeechSynthesisVoice(synth, lastVoiceUriRef.current);
-
-      if (voice) {
-        utterance.voice = voice;
-        lastVoiceUriRef.current = voice.voiceURI;
-      } else {
-        lastVoiceUriRef.current = null;
-      }
-
-      utterance.onstart = () => {
-        state.setSpeechPlaying(messageId);
-      };
-
-      utterance.onend = () => {
-        if (useChatStore.getState().activePlaybackMessageId === messageId) {
-          state.stopSpeechPlayback();
-        }
-      };
-
-      utterance.onerror = (event: SpeechSynthesisEventLike) => {
-        state.setSpeechPlaybackError(
-          messageId,
-          buildSpeechErrorNotice(normalizePlaybackError(event.error), 'playback'),
-        );
-      };
 
       state.startSpeechPlayback(messageId);
 
+      const text = getPlainSpeechText(getMessageText(messageId));
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
-        synth.speak(utterance);
+        const doSynthesize = synthesizeFn ?? synthesizeAudio;
+        const blob = await doSynthesize(text, undefined, controller.signal);
+
+        // Stale response guard: check if we're still playing this message
+        if (useChatStore.getState().activePlaybackMessageId !== messageId) {
+          return false;
+        }
+
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+
+        const audio = new Audio(url);
+        audioRef.current = audio;
+
+        audio.onplay = () => {
+          useChatStore.getState().setSpeechPlaying(messageId);
+        };
+
+        audio.onended = () => {
+          revokeCurrentUrl();
+          audioRef.current = null;
+          useChatStore.getState().stopSpeechPlayback();
+        };
+
+        audio.onerror = () => {
+          revokeCurrentUrl();
+          audioRef.current = null;
+          useChatStore.getState().setSpeechPlaybackError(
+            messageId,
+            buildSpeechErrorNotice('playback-interrupted', 'playback'),
+          );
+        };
+
+        try {
+          await audio.play();
+        } catch (playError: unknown) {
+          // Ignore AbortError (user cancelled)
+          if (
+            typeof playError === 'object' &&
+            playError &&
+            'name' in playError &&
+            playError.name === 'AbortError'
+          ) {
+            return false;
+          }
+
+          useChatStore.getState().setSpeechPlaybackError(
+            messageId,
+            buildSpeechErrorNotice('playback-blocked', 'playback'),
+          );
+          return false;
+        }
+
         return true;
-      } catch (error) {
-        const normalizedError =
+      } catch (error: unknown) {
+        // Ignore AbortError from AbortController
+        if (
           typeof error === 'object' &&
           error &&
           'name' in error &&
-          (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')
-            ? 'playback-blocked'
-            : 'unknown';
+          error.name === 'AbortError'
+        ) {
+          return false;
+        }
 
-        state.setSpeechPlaybackError(
+        useChatStore.getState().setSpeechPlaybackError(
           messageId,
-          buildSpeechErrorNotice(normalizedError, 'playback'),
+          buildSpeechErrorNotice('network', 'playback'),
         );
         return false;
       }
     },
-    [UtteranceCtor, getMessageText, stopPlayback, synth],
+    [getMessageText, revokeCurrentUrl, stopPlayback, synthesizeFn],
   );
 
   return {

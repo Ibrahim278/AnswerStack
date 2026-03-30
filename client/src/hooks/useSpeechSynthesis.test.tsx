@@ -22,8 +22,9 @@ class MockAudio {
 describe('useSpeechSynthesis (backend-proxied)', () => {
   let originalAudio: typeof Audio;
   let lastAudio: MockAudio;
-  let originalCreateObjectURL: typeof URL.createObjectURL;
-  let originalRevokeObjectURL: typeof URL.revokeObjectURL;
+
+  const mockCreateObjectURL = vi.fn(() => 'blob:mock-url');
+  const mockRevokeObjectURL = vi.fn();
 
   beforeEach(() => {
     resetChatStore();
@@ -36,17 +37,18 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
     lastAudio = new MockAudio();
     globalThis.Audio = vi.fn(() => lastAudio) as unknown as typeof Audio;
 
-    // Mock URL methods
-    originalCreateObjectURL = URL.createObjectURL;
-    originalRevokeObjectURL = URL.revokeObjectURL;
-    URL.createObjectURL = vi.fn(() => 'blob:mock-url');
-    URL.revokeObjectURL = vi.fn();
+    // Mock URL methods -- define directly since jsdom doesn't have them
+    mockCreateObjectURL.mockClear();
+    mockRevokeObjectURL.mockClear();
+    URL.createObjectURL = mockCreateObjectURL as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL = mockRevokeObjectURL as unknown as typeof URL.revokeObjectURL;
   });
 
   afterEach(() => {
     globalThis.Audio = originalAudio;
-    URL.createObjectURL = originalCreateObjectURL;
-    URL.revokeObjectURL = originalRevokeObjectURL;
+    // Do NOT delete URL.createObjectURL / URL.revokeObjectURL here --
+    // React cleanup effects may still reference them after afterEach runs.
+    // The next beforeEach will reset the mocks.
     resetChatStore();
   });
 
@@ -73,7 +75,7 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
       undefined,
       expect.any(AbortSignal),
     );
-    expect(URL.createObjectURL).toHaveBeenCalled();
+    expect(mockCreateObjectURL).toHaveBeenCalled();
     expect(lastAudio.play).toHaveBeenCalled();
     expect(useChatStore.getState().speechPlaybackState).toBe('playing');
     expect(useChatStore.getState().activePlaybackMessageId).toBe('msg-1');
@@ -134,7 +136,7 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
     });
 
     expect(firstAudio.pause).toHaveBeenCalled();
-    expect(URL.revokeObjectURL).toHaveBeenCalled();
+    expect(mockRevokeObjectURL).toHaveBeenCalled();
     expect(useChatStore.getState().activePlaybackMessageId).toBe('msg-b');
   });
 
@@ -159,7 +161,7 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
     });
 
     expect(lastAudio.pause).toHaveBeenCalled();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+    expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
     expect(useChatStore.getState().speechPlaybackState).toBe('stopped');
     expect(useChatStore.getState().activePlaybackMessageId).toBeNull();
   });
@@ -258,7 +260,7 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
       lastAudio.onended?.();
     });
 
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+    expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
     expect(useChatStore.getState().speechPlaybackState).toBe('stopped');
     expect(useChatStore.getState().activePlaybackMessageId).toBeNull();
   });

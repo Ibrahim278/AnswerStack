@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useRef } from 'react';
 import {
   buildSpeechErrorNotice,
-  getSpeechRecognitionCtor,
   queryMicrophonePermission,
   requestMicrophonePreflight,
   watchMicrophonePermission,
 } from '@/lib/speech';
+import { createAudioCapture, type AudioCapture } from '@/lib/audioCapture';
+import { transcribeAudio } from '@/api/speech';
 import { useChatStore } from '@/stores/chatStore';
 import type {
   MicrophonePermissionState,
   MicrophonePreflightResult,
   SpeechErrorNotice,
-  SpeechRecognitionErrorEventLike,
-  SpeechRecognitionEventLike,
-  SpeechRecognitionLike,
 } from '@/types/speech';
+
+/** Minimum blob size (bytes) to consider as containing speech data. */
+const MIN_BLOB_SIZE = 100;
+
+/** Maximum recording duration before auto-commit (ms). */
+const MAX_RECORDING_DURATION_MS = 60_000;
 
 interface UseSpeechRecognitionOptions {
   value: string;
@@ -22,39 +26,40 @@ interface UseSpeechRecognitionOptions {
   onCommit: (finalValue: string) => void;
   onCancel: (restoreValue: string) => void;
   onStart?: () => void;
-  recognitionFactory?: () => SpeechRecognitionLike | null;
+  getUserMediaFn?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
+  createCaptureFn?: (stream: MediaStream) => AudioCapture;
+  transcribeFn?: (blob: Blob, mimeType: string, lang: string) => Promise<{ text: string }>;
   queryPermission?: () => Promise<MicrophonePermissionState>;
   requestPreflight?: () => Promise<MicrophonePreflightResult>;
 }
 
 interface UseSpeechRecognitionResult {
   startCapture: () => Promise<boolean>;
-  commitCapture: () => void;
+  commitCapture: () => Promise<void>;
   cancelCapture: () => void;
   cleanup: () => void;
 }
 
-function normalizeStartError(error: unknown): SpeechErrorNotice {
-  if (
-    typeof error === 'object' &&
-    error &&
-    'name' in error &&
-    (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')
-  ) {
-    return buildSpeechErrorNotice('not-allowed');
+function normalizeGetUserMediaError(error: unknown): SpeechErrorNotice {
+  if (typeof error === 'object' && error && 'name' in error) {
+    const name = String(error.name);
+
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+      return buildSpeechErrorNotice('not-allowed');
+    }
+
+    if (
+      name === 'NotFoundError' ||
+      name === 'DevicesNotFoundError' ||
+      name === 'NotReadableError' ||
+      name === 'TrackStartError' ||
+      name === 'OverconstrainedError'
+    ) {
+      return buildSpeechErrorNotice('audio-capture');
+    }
   }
 
   return buildSpeechErrorNotice('unknown');
-}
-
-function getEventTranscript(event: SpeechRecognitionEventLike) {
-  let transcript = '';
-
-  for (let index = event.resultIndex; index < event.results.length; index += 1) {
-    transcript += event.results[index]?.[0]?.transcript ?? '';
-  }
-
-  return transcript;
 }
 
 export function useSpeechRecognition({
@@ -63,16 +68,20 @@ export function useSpeechRecognition({
   onCommit,
   onCancel,
   onStart,
-  recognitionFactory,
+  getUserMediaFn,
+  createCaptureFn,
+  transcribeFn,
   queryPermission = queryMicrophonePermission,
   requestPreflight = requestMicrophonePreflight,
 }: UseSpeechRecognitionOptions): UseSpeechRecognitionResult {
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const permissionCleanupRef = useRef<() => void>(() => {});
+  const captureRef = useRef<AudioCapture | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const committedPrefixRef = useRef('');
-  const latestTranscriptRef = useRef('');
-  const suppressNextErrorRef = useRef(false);
+  const permissionCleanupRef = useRef<() => void>(() => {});
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hadPermissionSuccessRef = useRef(false);
+
+  // Callback refs to avoid stale closures
   const onInterimTextRef = useRef(onInterimText);
   const onCommitRef = useRef(onCommit);
   const onCancelRef = useRef(onCancel);
@@ -85,6 +94,23 @@ export function useSpeechRecognition({
     onStartRef.current = onStart;
   }, [onInterimText, onCommit, onCancel, onStart]);
 
+  const clearRecordingTimeout = useCallback(() => {
+    if (timeoutRef.current !== null) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  const cancelActiveCapture = useCallback(() => {
+    clearRecordingTimeout();
+    const capture = captureRef.current;
+    if (capture) {
+      capture.cancel();
+      captureRef.current = null;
+    }
+    streamRef.current = null;
+  }, [clearRecordingTimeout]);
+
   const cleanupStoreState = useCallback(() => {
     const state = useChatStore.getState();
     useChatStore.setState({
@@ -96,17 +122,6 @@ export function useSpeechRecognition({
       activeSpeechMode:
         state.activeSpeechMode === 'recording' ? 'none' : state.activeSpeechMode,
     });
-  }, []);
-
-  const cancelActiveRecognition = useCallback(() => {
-    const recognition = recognitionRef.current;
-    if (!recognition) {
-      return;
-    }
-
-    suppressNextErrorRef.current = true;
-    recognition.abort();
-    recognitionRef.current = null;
   }, []);
 
   const handlePermissionChange = useCallback(
@@ -123,22 +138,22 @@ export function useSpeechRecognition({
         return;
       }
 
-      cancelActiveRecognition();
+      cancelActiveCapture();
       state.cancelSpeechCapture();
       onCancelRef.current(committedPrefixRef.current);
       state.setSpeechRecognitionError(buildSpeechErrorNotice('not-allowed'));
     },
-    [cancelActiveRecognition],
+    [cancelActiveCapture],
   );
 
   const cleanup = useCallback(() => {
     permissionCleanupRef.current();
     permissionCleanupRef.current = () => {};
-    cancelActiveRecognition();
-    latestTranscriptRef.current = '';
+    cancelActiveCapture();
     cleanupStoreState();
-  }, [cancelActiveRecognition, cleanupStoreState]);
+  }, [cancelActiveCapture, cleanupStoreState]);
 
+  // Permission watcher
   useEffect(() => {
     let cancelled = false;
 
@@ -157,28 +172,72 @@ export function useSpeechRecognition({
     };
   }, [cleanup, handlePermissionChange]);
 
-  const startCapture = useCallback(async () => {
+  // commitCapture needs to be a ref-stable async function for the timeout
+  const commitCaptureImpl = useCallback(async () => {
     const state = useChatStore.getState();
-    const createRecognition =
-      recognitionFactory ??
-      (() => {
-        const RecognitionCtor = getSpeechRecognitionCtor();
-        return RecognitionCtor ? new RecognitionCtor() : null;
-      });
+    clearRecordingTimeout();
 
-    const recognition = createRecognition();
-    committedPrefixRef.current = value;
-    latestTranscriptRef.current = '';
-    suppressNextErrorRef.current = false;
+    state.setSpeechProcessing();
 
-    if (!recognition) {
-      state.setMicrophonePermission('unsupported');
-      state.setSpeechRecognitionError(buildSpeechErrorNotice('not-supported'));
-      return false;
+    const capture = captureRef.current;
+    if (!capture) {
+      state.cancelSpeechCapture();
+      onCancelRef.current(committedPrefixRef.current);
+      return;
     }
 
+    try {
+      const result = await capture.stop();
+
+      // Release microphone
+      if (streamRef.current) {
+        for (const track of streamRef.current.getTracks()) {
+          track.stop();
+        }
+      }
+
+      captureRef.current = null;
+      streamRef.current = null;
+
+      // Check for empty/tiny blob (no speech detected)
+      if (result.blob.size < MIN_BLOB_SIZE) {
+        state.setSpeechRecognitionError(buildSpeechErrorNotice('no-speech'));
+        onCancelRef.current(committedPrefixRef.current);
+        return;
+      }
+
+      // Transcribe via backend
+      const doTranscribe = transcribeFn ?? transcribeAudio;
+      const resp = await doTranscribe(result.blob, result.mimeType, 'en');
+      const finalValue = `${committedPrefixRef.current}${(resp.text || '').trim()}`;
+      state.commitSpeechCapture(finalValue);
+      onCommitRef.current(finalValue);
+    } catch {
+      captureRef.current = null;
+      streamRef.current = null;
+      state.setSpeechRecognitionError(buildSpeechErrorNotice('network'));
+      onCancelRef.current(committedPrefixRef.current);
+    }
+  }, [clearRecordingTimeout, transcribeFn]);
+
+  const commitCapture = useCallback(async () => {
+    await commitCaptureImpl();
+  }, [commitCaptureImpl]);
+
+  const cancelCapture = useCallback(() => {
+    const state = useChatStore.getState();
+    cancelActiveCapture();
+    state.cancelSpeechCapture();
+    onCancelRef.current(committedPrefixRef.current);
+  }, [cancelActiveCapture]);
+
+  const startCapture = useCallback(async () => {
+    const state = useChatStore.getState();
+
+    committedPrefixRef.current = value;
     state.beginSpeechCapture(value);
 
+    // Check microphone permission
     let permission = await queryPermission();
     state.setMicrophonePermission(permission);
 
@@ -207,79 +266,48 @@ export function useSpeechRecognition({
       return false;
     }
 
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      hadPermissionSuccessRef.current = true;
-      state.setSpeechListening();
-      onStartRef.current?.();
-    };
-
-    recognition.onresult = (event) => {
-      const transcript = getEventTranscript(event);
-      latestTranscriptRef.current = transcript;
-      const nextValue = `${committedPrefixRef.current}${transcript}`;
-      state.updateSpeechDraft(nextValue);
-      onInterimTextRef.current(nextValue);
-    };
-
-    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
-      recognitionRef.current = null;
-
-      if (suppressNextErrorRef.current && event.error === 'aborted') {
-        suppressNextErrorRef.current = false;
-        return;
-      }
-
-      onCancelRef.current(committedPrefixRef.current);
-
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+    // Acquire microphone stream
+    const doGetUserMedia = getUserMediaFn ?? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    let stream: MediaStream;
+    try {
+      stream = await doGetUserMedia({ audio: true });
+    } catch (error) {
+      const notice = normalizeGetUserMediaError(error);
+      if (notice.code === 'not-allowed') {
         state.setMicrophonePermission('denied');
       }
-
-      state.setSpeechRecognitionError(buildSpeechErrorNotice(event.error));
-    };
-
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      suppressNextErrorRef.current = false;
-    };
-
-    try {
-      recognitionRef.current = recognition;
-      recognition.start();
-      return true;
-    } catch (error) {
-      recognitionRef.current = null;
       onCancelRef.current(committedPrefixRef.current);
-      state.setSpeechRecognitionError(normalizeStartError(error));
+      state.setSpeechRecognitionError(notice);
       return false;
     }
-  }, [queryPermission, recognitionFactory, requestPreflight, value]);
 
-  const commitCapture = useCallback(() => {
-    const state = useChatStore.getState();
-    const recognition = recognitionRef.current;
-    const finalValue = `${committedPrefixRef.current}${latestTranscriptRef.current.trim()}`;
+    streamRef.current = stream;
+    hadPermissionSuccessRef.current = true;
 
-    state.setSpeechProcessing();
-    recognition?.stop();
-    recognitionRef.current = null;
-    state.commitSpeechCapture(finalValue);
-    onCommitRef.current(finalValue);
-  }, []);
+    // Create audio capture
+    const doCreateCapture = createCaptureFn ?? createAudioCapture;
+    const capture = doCreateCapture(stream);
+    captureRef.current = capture;
 
-  const cancelCapture = useCallback(() => {
-    const state = useChatStore.getState();
+    // Start recording
+    capture.start();
+    state.setSpeechListening();
+    onStartRef.current?.();
 
-    cancelActiveRecognition();
-    latestTranscriptRef.current = '';
-    state.cancelSpeechCapture();
-    onCancelRef.current(committedPrefixRef.current);
-  }, [cancelActiveRecognition]);
+    // Set 60-second timeout
+    timeoutRef.current = setTimeout(() => {
+      void commitCaptureImpl();
+    }, MAX_RECORDING_DURATION_MS);
+
+    return true;
+  }, [
+    commitCaptureImpl,
+    createCaptureFn,
+    getUserMediaFn,
+    queryPermission,
+    requestPreflight,
+    value,
+  ]);
 
   return {
     startCapture,

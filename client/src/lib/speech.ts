@@ -1,18 +1,12 @@
 import { stripMarkdownAndCitations } from '@/utils/markdown';
+import { getSpeechCapabilities } from '@/api/speech';
+import { canCaptureAudio } from '@/lib/audioCapture';
 import type {
   MicrophonePermissionState,
   MicrophonePreflightResult,
   SpeechCapabilitySnapshot,
   SpeechErrorNotice,
-  SpeechRecognitionCtorLike,
-  SpeechSynthesisLike,
 } from '@/types/speech';
-
-interface BrowserSpeechWindow extends Window {
-  SpeechRecognition?: SpeechRecognitionCtorLike;
-  webkitSpeechRecognition?: SpeechRecognitionCtorLike;
-  SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance;
-}
 
 interface PermissionAwareNavigator extends Navigator {
   permissions?: {
@@ -23,9 +17,6 @@ interface PermissionAwareNavigator extends Navigator {
 interface PermissionStatusWithOnChange extends PermissionStatus {
   onchange: ((this: PermissionStatus, event: Event) => unknown) | null;
 }
-
-const voiceCountCache = new WeakMap<BrowserSpeechWindow, number>();
-const voiceListeners = new WeakSet<SpeechSynthesis>();
 
 function mapPermissionState(state: PermissionState): MicrophonePermissionState {
   if (state === 'granted' || state === 'prompt' || state === 'denied') {
@@ -97,48 +88,37 @@ function normalizeSpeechErrorCode(
   }
 }
 
-function refreshVoiceCount(win: BrowserSpeechWindow) {
-  const voicesAvailable = win.speechSynthesis?.getVoices().length ?? 0;
-  voiceCountCache.set(win, voicesAvailable);
-  return voicesAvailable;
-}
+/**
+ * Detect speech capabilities by combining backend availability with local browser checks.
+ *
+ * STT requires both local audio capture support (getUserMedia + MediaRecorder) AND
+ * backend STT availability. TTS only requires backend TTS availability.
+ */
+export async function detectSpeechCapabilities(): Promise<SpeechCapabilitySnapshot> {
+  const localCapture = canCaptureAudio();
+  let backendStt = false;
+  let backendTts = false;
+  let sttProvider: string | null = null;
+  let ttsProvider: string | null = null;
 
-export function getSpeechRecognitionCtor(win: BrowserSpeechWindow = window) {
-  return win.SpeechRecognition ?? win.webkitSpeechRecognition ?? null;
-}
-
-export function detectSpeechCapabilities(
-  win: BrowserSpeechWindow = window,
-): SpeechCapabilitySnapshot {
-  const stt = getSpeechRecognitionCtor(win) ? 'available' : 'unavailable';
-  const tts =
-    win.speechSynthesis && win.SpeechSynthesisUtterance ? 'available' : 'unavailable';
-
-  let voicesAvailable = 0;
-  if (tts === 'available' && win.speechSynthesis) {
-    voicesAvailable = refreshVoiceCount(win);
-
-    if (voicesAvailable === 0 && !voiceListeners.has(win.speechSynthesis)) {
-      const handleVoicesChanged = () => {
-        refreshVoiceCount(win);
-      };
-
-      if (typeof win.speechSynthesis.addEventListener === 'function') {
-        win.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
-      } else {
-        win.speechSynthesis.onvoiceschanged = handleVoicesChanged;
-      }
-
-      voiceListeners.add(win.speechSynthesis);
-      voicesAvailable = voiceCountCache.get(win) ?? 0;
-    }
+  try {
+    const caps = await getSpeechCapabilities();
+    backendStt = caps.stt.available;
+    backendTts = caps.tts.available;
+    sttProvider = caps.stt.provider;
+    ttsProvider = caps.tts.provider;
+  } catch {
+    // Backend unreachable -- speech unavailable
   }
 
   return {
-    stt,
-    tts,
-    voicesAvailable,
-    microphonePermission: stt === 'available' ? 'pending' : 'unsupported',
+    stt: localCapture && backendStt ? 'available' : 'unavailable',
+    tts: backendTts ? 'available' : 'unavailable',
+    backendSttAvailable: backendStt,
+    backendTtsAvailable: backendTts,
+    sttProvider,
+    ttsProvider,
+    microphonePermission: localCapture ? 'pending' : 'unsupported',
   };
 }
 
@@ -304,21 +284,6 @@ export function buildSpeechErrorNotice(
         message: 'Speech could not continue because the browser returned an unexpected error.',
       };
   }
-}
-
-export function resolveSpeechSynthesisVoice(
-  synth: SpeechSynthesisLike,
-  previousVoiceUri?: string | null,
-) {
-  const voices = synth.getVoices();
-  const fallbackVoice = voices[0] ?? null;
-
-  if (!previousVoiceUri) {
-    return { voice: fallbackVoice, voicesAvailable: voices.length };
-  }
-
-  const selectedVoice = voices.find((voice) => voice.voiceURI === previousVoiceUri) ?? fallbackVoice;
-  return { voice: selectedVoice, voicesAvailable: voices.length };
 }
 
 export function getPlainSpeechText(markdown: string) {

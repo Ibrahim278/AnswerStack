@@ -126,7 +126,7 @@ export default function ChatPage() {
         setInput(speechCommittedPrefix);
       }
 
-      speechSynthesis.playMessage(messageId);
+      void speechSynthesis.playMessage(messageId);
     },
     [cancelCapture, isSpeechRecording, speechCommittedPrefix, speechSynthesis.playMessage],
   );
@@ -153,7 +153,9 @@ export default function ChatPage() {
   }, [messages, accumulatedTokens]);
 
   useEffect(() => {
-    setSpeechCapabilities(detectSpeechCapabilities());
+    void detectSpeechCapabilities().then((caps) => {
+      setSpeechCapabilities({ stt: caps.stt, tts: caps.tts });
+    });
   }, [setSpeechCapabilities]);
 
   useEffect(() => {

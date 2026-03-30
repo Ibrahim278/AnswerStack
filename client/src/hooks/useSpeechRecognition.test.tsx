@@ -17,6 +17,11 @@ function createMockStream(): MediaStream {
   } as unknown as MediaStream;
 }
 
+/** Create an audio blob large enough to pass the MIN_BLOB_SIZE threshold (100 bytes). */
+function createLargeBlob(): Blob {
+  return new Blob([new Uint8Array(200)], { type: 'audio/webm' });
+}
+
 function createMockCapture(overrides?: Partial<AudioCapture>): AudioCapture {
   let active = false;
 
@@ -29,7 +34,7 @@ function createMockCapture(overrides?: Partial<AudioCapture>): AudioCapture {
         new Promise<AudioCaptureResult>((resolve) => {
           active = false;
           resolve({
-            blob: new Blob(['fake-audio-data'], { type: 'audio/webm' }),
+            blob: createLargeBlob(),
             mimeType: 'audio/webm',
             durationMs: 1500,
           });
@@ -375,7 +380,7 @@ describe('useSpeechRecognition (backend-proxied)', () => {
   });
 
   it('60-second timeout auto-commits recording', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const mockStream = createMockStream();
     const mockCapture = createMockCapture();
     const onCommit = vi.fn();
@@ -398,9 +403,11 @@ describe('useSpeechRecognition (backend-proxied)', () => {
       await result.current.startCapture();
     });
 
-    // Advance timer to 60 seconds
+    // Advance timer to 60 seconds to trigger the timeout
     await act(async () => {
-      vi.advanceTimersByTime(60000);
+      vi.advanceTimersByTime(60_000);
+      // Allow microtasks to process
+      await vi.advanceTimersByTimeAsync(0);
     });
 
     // Wait for the async commitCapture chain to complete
