@@ -118,7 +118,7 @@ export async function detectSpeechCapabilities(): Promise<SpeechCapabilitySnapsh
     backendTtsAvailable: backendTts,
     sttProvider,
     ttsProvider,
-    microphonePermission: localCapture ? 'pending' : 'unsupported',
+    microphonePermission: localCapture ? 'prompt' : 'unsupported',
   };
 }
 
