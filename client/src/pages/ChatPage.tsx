@@ -50,8 +50,9 @@ export default function ChatPage() {
   const activePlaybackMessageId = useChatStore((s) => s.activePlaybackMessageId);
   const setSpeechCapabilities = useChatStore((s) => s.setSpeechCapabilities);
 
-  const isSpeechRecording =
-    speechRecognitionState === 'arming' || speechRecognitionState === 'listening';
+  const isSpeechArming = speechRecognitionState === 'arming';
+  const isSpeechListening = speechRecognitionState === 'listening';
+  const isSpeechRecording = isSpeechArming || isSpeechListening;
 
   // SSE streaming
   const handleSessionCreated = useCallback(
@@ -64,7 +65,7 @@ export default function ChatPage() {
     [isSpeechRecording, navigate, projectId, speechCommittedPrefix],
   );
 
-  const { sendMessage, stop, retry, isStreaming } = useChat({
+  const { sendMessage, stop, retry, abort, isStreaming } = useChat({
     projectId,
     onSessionCreated: handleSessionCreated,
   });
@@ -117,7 +118,7 @@ export default function ChatPage() {
 
     stopSpeechPlayback();
     return startCapture();
-  }, [isStreaming, startCapture, stopSpeechPlayback]);
+  }, [isStreaming, microphonePermission, speechRecognitionState, startCapture, stopSpeechPlayback]);
 
   const handleToggleSpeech = useCallback(
     (messageId: string) => {
@@ -167,12 +168,14 @@ export default function ChatPage() {
 
   useEffect(() => {
     const handleWindowBlur = () => {
-      cancelRecordingIfActive();
+      if (isSpeechListening) {
+        cancelCapture();
+      }
     };
 
     window.addEventListener('blur', handleWindowBlur);
     return () => window.removeEventListener('blur', handleWindowBlur);
-  }, [cancelRecordingIfActive]);
+  }, [cancelCapture, isSpeechListening]);
 
   useEffect(() => {
     if (previousRouteSessionIdRef.current !== routeSessionId) {
@@ -190,10 +193,9 @@ export default function ChatPage() {
   }, [cancelCapture, isSpeechRecording, speechCommittedPrefix, speechPlaybackState]);
 
   useEffect(() => () => {
-    cancelRecordingIfActive();
     cleanupSpeechRecognition();
     cleanupSpeechSynthesis();
-  }, [cancelRecordingIfActive, cleanupSpeechRecognition, cleanupSpeechSynthesis]);
+  }, [cleanupSpeechRecognition, cleanupSpeechSynthesis]);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || isStreaming) return;
@@ -206,11 +208,14 @@ export default function ChatPage() {
 
   const handleNewChat = () => {
     cancelRecordingIfActive();
+    abort();
     navigate(`/projects/${projectId}/chat`);
   };
 
   const handleSelectSession = (sid: string) => {
+    if (sid === routeSessionId) return;
     cancelRecordingIfActive();
+    abort();
     navigate(`/projects/${projectId}/chat/${sid}`);
   };
 
@@ -291,22 +296,34 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
           <div className="p-2 space-y-0.5">
             {sessions.map(session => (
-              <button
+              <div
                 key={session.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleSelectSession(session.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  handleSelectSession(session.id);
+                }}
                 className={cn(
-                  'group w-full flex items-center text-left px-2.5 py-2 rounded-md text-sm transition-colors',
+                  'group w-full flex items-center text-left px-2.5 py-2 rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   routeSessionId === session.id ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 )}
               >
                 <span className="truncate flex-1 min-w-0">{session.title}</span>
                 <button
+                  type="button"
                   className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity shrink-0 ml-1"
                   onClick={e => { e.stopPropagation(); handleDeleteSession(session.id); }}
+                  aria-label={`Delete chat session ${session.title}`}
                 >
                   <Trash2 className="w-3 h-3" />
                 </button>
-              </button>
+              </div>
             ))}
             {sessions.length === 0 && (
               <p className="text-xs text-muted-foreground px-2.5 py-4 text-center">No conversations yet</p>

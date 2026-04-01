@@ -51,6 +51,12 @@ class Settings(Base):
     reranker_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )
+    tts_provider: Mapped[str] = mapped_column(
+        String(50), default="", nullable=False, server_default=""
+    )
+    tts_voice_id: Mapped[str] = mapped_column(
+        String(255), default="", nullable=False, server_default=""
+    )
     provider_capabilities: Mapped[dict | None] = mapped_column(
         JSON, nullable=True
     )

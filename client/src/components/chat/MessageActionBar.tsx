@@ -67,7 +67,7 @@ export function MessageActionBar({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="inline-flex items-center gap-1 px-1.5 py-1 rounded-full bg-card/95 border border-border shadow-md backdrop-blur-sm">
+      <div className="ml-auto inline-flex items-center gap-1">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

@@ -52,7 +52,7 @@ function AssistantMessageInner({
         <MarkdownRenderer content={message.content} messageId={message.id} />
 
         {/* Footer: sources + copy + retry */}
-        <div className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-2">
+        <div className="mt-2 flex items-center gap-3 border-t border-border pt-2">
           {sources.length > 0 && (
             <button
               onClick={() => openSourcePanel(message.id)}

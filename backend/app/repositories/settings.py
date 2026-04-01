@@ -18,6 +18,8 @@ SETTINGS_DEFAULTS = {
     "top_k": 5,
     "similarity_threshold": 0.3,
     "reranker_enabled": True,
+    "tts_provider": "",
+    "tts_voice_id": "",
     "provider_capabilities": None,
 }
 

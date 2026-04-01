@@ -119,6 +119,9 @@ describe('ChatComposer', () => {
     await waitFor(() => {
       expect(screen.getByRole('textbox')).toHaveValue('Original question with interim speech');
     });
+
+    expect(screen.getByLabelText('Recording. Click to finish dictation')).toBeInTheDocument();
+    expect(screen.getByText('Recording... Click the mic again to finish.')).toBeInTheDocument();
   });
 
   it('second click commits transcript and does not auto-send', async () => {
@@ -135,7 +138,7 @@ describe('ChatComposer', () => {
     });
 
     // Second click commits
-    fireEvent.click(screen.getByLabelText('Click to finish recording'));
+    fireEvent.click(screen.getByLabelText('Recording. Click to finish dictation'));
 
     await waitFor(() => {
       expect(screen.getByRole('textbox')).toHaveValue('Original question with final speech');
@@ -163,8 +166,16 @@ describe('ChatComposer', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
-  it('shows streaming banner when isStreaming', () => {
+  it('does not show streaming banner when just streaming without active speech', () => {
     render(<ComposerHarness isStreaming />);
+
+    expect(
+      screen.queryByText('Wait for the current answer to finish before dictating another question.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows streaming banner when dictating during streaming', () => {
+    render(<ComposerHarness isStreaming speechRecognitionState="listening" />);
 
     expect(
       screen.getByText('Wait for the current answer to finish before dictating another question.'),
@@ -178,6 +189,22 @@ describe('ChatComposer', () => {
     expect(
       screen.getByText('Allow microphone access to dictate your question.'),
     ).toBeInTheDocument();
+  });
+
+  it('shows an explicit arming state while waiting for microphone access', () => {
+    render(<ComposerHarness speechRecognitionState="arming" />);
+
+    expect(screen.getByLabelText('Waiting for microphone access')).toBeDisabled();
+    expect(screen.queryByText('Waiting for microphone access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Approve the browser prompt to start recording.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting for microphone permission...')).not.toBeInTheDocument();
+  });
+
+  it('shows a processing state while transcribing recorded audio', () => {
+    render(<ComposerHarness speechRecognitionState="processing" />);
+
+    expect(screen.getByLabelText('Transcribing recording')).toBeDisabled();
+    expect(screen.getByText('Transcribing your recording...')).toBeInTheDocument();
   });
 
   it('shows speech error notice for recognition errors', () => {
@@ -265,9 +292,6 @@ describe('ChatComposer', () => {
     render(<ComposerHarness isStreaming />);
 
     expect(screen.getByLabelText('Click to start dictation')).toBeDisabled();
-    expect(
-      screen.getByText('Wait for the current answer to finish before dictating another question.'),
-    ).toBeInTheDocument();
   });
 
   it('send button disabled when input empty', () => {

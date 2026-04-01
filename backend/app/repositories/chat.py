@@ -43,6 +43,9 @@ class ChatRepository(ABC):
     ) -> ChatMessage: ...
 
     @abstractmethod
+    async def delete_last_assistant_message(self, session_id: UUID) -> bool: ...
+
+    @abstractmethod
     async def get_recent_messages(self, session_id: UUID, limit: int = 10) -> list[ChatMessage]: ...
 
 
@@ -135,6 +138,24 @@ class SQLAlchemyChatRepository(ChatRepository):
             session.updated_at = datetime.now(timezone.utc)
             await self._session.flush()
         return message
+
+    async def delete_last_assistant_message(self, session_id: UUID) -> bool:
+        """Delete the most recent assistant message in a session (for retry)."""
+        result = await self._session.execute(
+            select(ChatMessage)
+            .where(
+                ChatMessage.session_id == session_id,
+                ChatMessage.role == "assistant",
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        )
+        msg = result.scalar_one_or_none()
+        if msg is None:
+            return False
+        await self._session.delete(msg)
+        await self._session.flush()
+        return True
 
     async def get_recent_messages(self, session_id: UUID, limit: int = 10) -> list[ChatMessage]:
         result = await self._session.execute(

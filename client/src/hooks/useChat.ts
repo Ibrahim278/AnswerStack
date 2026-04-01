@@ -21,6 +21,7 @@ interface UseChatOptions {
 interface SendMessageParams {
   question: string;
   sessionId?: string;
+  isRetry?: boolean;
 }
 
 export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions) {
@@ -40,6 +41,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
     stopStream,
     setStreamError,
     prepareStream,
+    resetStream,
     isStreaming,
   } = useChatStore();
 
@@ -66,23 +68,34 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
 
   // Optimistic cache update after stream (D-66)
   const updateSessionCache = useCallback(
-    (sessionId: string, userMsg: ChatMessageResponse, assistantMsg: ChatMessageResponse) => {
+    (sessionId: string, userMsg: ChatMessageResponse, assistantMsg: ChatMessageResponse, isRetry?: boolean) => {
       queryClient.setQueryData<ChatSessionDetailResponse>(
         queryKeys.sessions.detail(sessionId),
         (old) => {
           if (!old) return old;
-          const messages = [...old.messages];
-          const lastMessage = messages[messages.length - 1];
-          const userAlreadyPresent =
-            lastMessage?.role === 'user' && lastMessage.content === userMsg.content;
+          let messages = [...old.messages];
 
-          if (!userAlreadyPresent) {
-            messages.push(userMsg);
-          }
+          if (isRetry) {
+            // Replace the last assistant message instead of appending
+            const lastAssistantIdx = messages.findLastIndex((m) => m.role === 'assistant');
+            if (lastAssistantIdx !== -1) {
+              messages[lastAssistantIdx] = assistantMsg;
+            } else {
+              messages.push(assistantMsg);
+            }
+          } else {
+            const lastMessage = messages[messages.length - 1];
+            const userAlreadyPresent =
+              lastMessage?.role === 'user' && lastMessage.content === userMsg.content;
 
-          const assistantAlreadyPresent = messages.some((message) => message.id === assistantMsg.id);
-          if (!assistantAlreadyPresent) {
-            messages.push(assistantMsg);
+            if (!userAlreadyPresent) {
+              messages.push(userMsg);
+            }
+
+            const assistantAlreadyPresent = messages.some((message) => message.id === assistantMsg.id);
+            if (!assistantAlreadyPresent) {
+              messages.push(assistantMsg);
+            }
           }
 
           return { ...old, messages };
@@ -96,7 +109,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
   );
 
   const sendMessage = useCallback(
-    async ({ question, sessionId }: SendMessageParams) => {
+    async ({ question, sessionId, isRetry }: SendMessageParams) => {
       // Abort any existing stream (D-70)
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -134,6 +147,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
           body: JSON.stringify({
             question,
             session_id: sessionId ?? null,
+            retry: isRetry ?? false,
           }),
           signal: controller.signal,
 
@@ -205,7 +219,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
                     sources_json: citedSources,
                     created_at: new Date().toISOString(),
                   };
-                  updateSessionCache(currentSessionId, userMessage, assistantMessage);
+                  updateSessionCache(currentSessionId, userMessage, assistantMessage, isRetry);
                 }
                 break;
               }
@@ -268,12 +282,46 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
   }, [stopStream, stopHeartbeatMonitor]);
 
   // Retry last message (CHAT-06, D-53)
+  // Messages live in TanStack Query (not the Zustand store), so we look them
+  // up from the query cache when the ref hasn't been set yet.
   const retry = useCallback(() => {
-    const question = userQuestionRef.current;
-    const sid = sessionIdRef.current;
+    let question = userQuestionRef.current;
+    let sid = sessionIdRef.current;
+
+    // Fall back to query cache for existing sessions
+    if (!question || !sid) {
+      const queries = queryClient.getQueriesData<ChatSessionDetailResponse>({
+        queryKey: ['sessions'],
+        exact: false,
+      });
+      for (const [, data] of queries) {
+        const msgs = data?.messages;
+        if (!msgs?.length) continue;
+        if (!sid) {
+          sid = msgs[0].session_id;
+        }
+        if (!question) {
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === 'user') {
+              question = msgs[i].content;
+              break;
+            }
+          }
+        }
+        if (question && sid) break;
+      }
+    }
+
     if (!question) return;
-    void sendMessage({ question, sessionId: sid ?? undefined });
-  }, [sendMessage]);
+    void sendMessage({ question, sessionId: sid ?? undefined, isRetry: true });
+  }, [sendMessage, queryClient]);
+
+  // Silently abort the active stream and reset state (used on session navigation)
+  const abort = useCallback(() => {
+    abortControllerRef.current?.abort();
+    stopHeartbeatMonitor();
+    resetStream();
+  }, [resetStream, stopHeartbeatMonitor]);
 
   // Cleanup on unmount: abort any active stream and clear heartbeat timer
   useEffect(() => {
@@ -290,6 +338,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
     sendMessage,
     stop,
     retry,
+    abort,
     isStreaming,
   };
 }

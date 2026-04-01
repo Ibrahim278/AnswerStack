@@ -59,7 +59,7 @@ export function ChatComposer({
   } = speechController;
 
   const isArming = speechRecognitionState === 'arming';
-  const isRecording = isArming || speechRecognitionState === 'listening';
+  const isRecording = speechRecognitionState === 'listening';
   const isProcessing = speechRecognitionState === 'processing';
 
   useEffect(() => {
@@ -91,15 +91,31 @@ export function ChatComposer({
         ? speechError
         : null;
 
+  const recordingStatus = isRecording
+      ? 'Recording... Click the mic again to finish.'
+      : isProcessing
+        ? 'Transcribing your recording...'
+        : null;
+
   return (
     <div className="space-y-2">
-      {isStreaming ? (
+      {isStreaming && speechCapabilities.stt === 'available' && (isArming || isRecording || isProcessing) ? (
         <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
           Wait for the current answer to finish before dictating another question.
         </div>
       ) : null}
 
       {recognitionNotice ? <SpeechInlineNotice notice={recognitionNotice} /> : null}
+
+      {recordingStatus ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-sm text-foreground"
+        >
+          {recordingStatus}
+        </div>
+      ) : null}
 
       <div className="flex items-end gap-2">
         <Textarea
@@ -122,13 +138,13 @@ export function ChatComposer({
         {speechCapabilities.stt === 'available' ? (
           <SpeechCaptureButton
             disabled={isStreaming}
+            isArming={isArming}
             isRecording={isRecording}
-            isProcessing={isProcessing || isArming}
+            isProcessing={isProcessing}
             onPressStart={() => {
               void onPressStart();
             }}
             onCommit={onCommit}
-            onCancel={onCancel}
           />
         ) : null}
 

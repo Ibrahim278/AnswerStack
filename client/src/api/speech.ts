@@ -47,12 +47,16 @@ export async function transcribeAudio(
   return response.json();
 }
 
-export async function synthesizeAudio(
+/**
+ * Prepare a synthesis token and return a GET URL that can be assigned
+ * to an <audio> element's src for progressive streaming playback.
+ */
+export async function prepareSynthesisUrl(
   text: string,
   voiceId?: string,
   signal?: AbortSignal,
-): Promise<Blob> {
-  const response = await fetch('/api/v1/speech/synthesize', {
+): Promise<string> {
+  const response = await fetch('/api/v1/speech/synthesize/prepare', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, voice_id: voiceId || undefined }),
@@ -61,22 +65,34 @@ export async function synthesizeAudio(
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.message || `Synthesis failed: ${response.status}`);
+    throw new Error(body?.message || `Synthesis preparation failed: ${response.status}`);
   }
 
-  const blob = await response.blob();
-  // Ensure the blob has the correct MIME type for Audio element playback.
-  // Some proxies strip content-type, leaving blob.type empty which breaks new Audio(url).
-  if (!blob.type || blob.type === 'application/octet-stream') {
-    return new Blob([blob], { type: 'audio/mpeg' });
-  }
-  return blob;
+  const data = await response.json();
+  return data.url as string;
+}
+
+export interface TTSProviderItem {
+  id: string;
+  name: string;
+  available: boolean;
+  reason?: string;
+}
+
+export interface TTSProvidersResponse {
+  providers: TTSProviderItem[];
+  active: string | null;
 }
 
 export async function getSpeechCapabilities(): Promise<SpeechCapabilitiesResponse> {
   return apiFetch<SpeechCapabilitiesResponse>('/speech/capabilities');
 }
 
-export async function getVoices(): Promise<VoicesResponse> {
-  return apiFetch<VoicesResponse>('/speech/voices');
+export async function getTTSProviders(): Promise<TTSProvidersResponse> {
+  return apiFetch<TTSProvidersResponse>('/speech/providers');
+}
+
+export async function getVoices(provider?: string): Promise<VoicesResponse> {
+  const params = provider ? `?provider=${encodeURIComponent(provider)}` : '';
+  return apiFetch<VoicesResponse>(`/speech/voices${params}`);
 }

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=10000)
     session_id: UUID | None = None
+    retry: bool = False
 
 
 class ChatSessionCreate(BaseModel):

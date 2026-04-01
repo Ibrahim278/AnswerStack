@@ -382,3 +382,111 @@ class TestSSEStreaming:
         assert len(message_start) >= 1
         data = json.loads(message_start[0]["data"])
         assert data["session_id"] == session_id
+
+    async def test_retry_replaces_assistant_message(self, async_client_with_chat):
+        """Retry flag should not create a duplicate user message and should replace the last assistant response."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        await client.put(
+            "/api/v1/settings",
+            json={"embedding_model": "text-embedding-test", "provider_model": "test-model"},
+        )
+
+        # Send initial message (creates session + user msg + assistant msg)
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "What is X?"},
+        )
+        assert resp.status_code == 200
+        events = parse_sse_events(resp.text)
+        start_data = json.loads(
+            [e for e in events if e.get("event") == "message_start"][0]["data"]
+        )
+        session_id = start_data["session_id"]
+
+        # Check initial message count
+        detail = await client.get(
+            f"/api/v1/projects/{project_id}/chat/sessions/{session_id}"
+        )
+        initial_msgs = detail.json()["messages"]
+        assert len(initial_msgs) == 2  # 1 user + 1 assistant
+        assert initial_msgs[0]["role"] == "user"
+        assert initial_msgs[1]["role"] == "assistant"
+
+        # Retry the same question
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "What is X?", "session_id": session_id, "retry": True},
+        )
+        assert resp.status_code == 200
+
+        # Check message count hasn't grown: still 1 user + 1 assistant
+        detail = await client.get(
+            f"/api/v1/projects/{project_id}/chat/sessions/{session_id}"
+        )
+        retry_msgs = detail.json()["messages"]
+        assert len(retry_msgs) == 2
+        assert retry_msgs[0]["role"] == "user"
+        assert retry_msgs[0]["content"] == "What is X?"
+        assert retry_msgs[1]["role"] == "assistant"
+        # The assistant message ID should be different (new response)
+        assert retry_msgs[1]["id"] != initial_msgs[1]["id"]
+
+    async def test_retry_without_session_id_is_normal_send(self, async_client_with_chat):
+        """Retry flag without session_id should behave like a normal message (creates new session)."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        await client.put(
+            "/api/v1/settings",
+            json={"embedding_model": "text-embedding-test", "provider_model": "test-model"},
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Hello", "retry": True},
+        )
+        assert resp.status_code == 200
+        events = parse_sse_events(resp.text)
+        start_data = json.loads(
+            [e for e in events if e.get("event") == "message_start"][0]["data"]
+        )
+        session_id = start_data["session_id"]
+
+        # Should have created a normal user + assistant message pair
+        detail = await client.get(
+            f"/api/v1/projects/{project_id}/chat/sessions/{session_id}"
+        )
+        msgs = detail.json()["messages"]
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "user"
+        assert msgs[1]["role"] == "assistant"
+
+    async def test_retry_with_no_prior_assistant_message(self, async_client_with_chat):
+        """Retry on a session with no assistant messages should still work (edge case)."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        await client.put(
+            "/api/v1/settings",
+            json={"embedding_model": "text-embedding-test", "provider_model": "test-model"},
+        )
+
+        # Create a session manually (no messages)
+        session_resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/sessions",
+            json={"title": "Empty Session"},
+        )
+        session_id = session_resp.json()["id"]
+
+        # Retry on empty session — should not crash, just proceed without deleting
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Retry on empty", "session_id": session_id, "retry": True},
+        )
+        assert resp.status_code == 200
+        events = parse_sse_events(resp.text)
+        event_types = [e.get("event") for e in events if "event" in e]
+        assert "message_start" in event_types
+        assert "done" in event_types

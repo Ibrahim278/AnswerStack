@@ -5,6 +5,7 @@ Covers:
 - ElevenLabsSTTProvider with mocked httpx
 - ElevenLabsTTSProvider with mocked httpx
 - KokoroTTSProvider with mocked httpx
+- PiperTTSProvider with mocked httpx
 - Config fields for speech providers
 - Edge cases: empty API keys, missing voices, content type mapping
 """
@@ -342,109 +343,231 @@ class TestElevenLabsTTSProvider:
 
 
 class TestKokoroTTSProvider:
-    """Tests for Kokoro (OpenAI-compatible) TTS provider with mocked HTTP client."""
+    """Tests for local Kokoro TTS provider."""
 
     def test_provider_name(self):
         from app.services.speech.kokoro_tts import KokoroTTSProvider
 
-        provider = KokoroTTSProvider(base_url="http://localhost:8880")
+        provider = KokoroTTSProvider(model_dir="data/kokoro")
         assert provider.provider_name == "Kokoro TTS"
 
     def test_default_voice_id(self):
         from app.services.speech.kokoro_tts import KokoroTTSProvider
 
-        provider = KokoroTTSProvider(base_url="http://localhost:8880", default_voice="af_bella")
+        provider = KokoroTTSProvider(model_dir="data/kokoro", default_voice="af_bella")
         assert provider.default_voice_id == "af_bella"
 
     async def test_is_available_success(self):
         from app.services.speech.kokoro_tts import KokoroTTSProvider
 
-        provider = KokoroTTSProvider(base_url="http://localhost:8880")
+        provider = KokoroTTSProvider(model_dir="data/kokoro")
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-
-        with patch.object(provider, "_client") as mock_client:
-            mock_client.get = AsyncMock(return_value=mock_response)
+        with patch.object(provider, "_get_pipeline", return_value=object()):
             assert await provider.is_available() is True
 
     async def test_is_available_failure(self):
         from app.services.speech.kokoro_tts import KokoroTTSProvider
 
-        provider = KokoroTTSProvider(base_url="http://localhost:8880")
+        provider = KokoroTTSProvider(model_dir="data/kokoro")
 
-        with patch.object(provider, "_client") as mock_client:
-            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        with patch.object(provider, "_get_pipeline", side_effect=RuntimeError("init failed")):
             assert await provider.is_available() is False
 
-    async def test_is_available_empty_base_url(self):
+    async def test_voice_language_code(self):
         from app.services.speech.kokoro_tts import KokoroTTSProvider
 
-        provider = KokoroTTSProvider(base_url="")
-        assert await provider.is_available() is False
+        provider = KokoroTTSProvider(model_dir="data/kokoro")
+        assert provider._voice_language_code("af_bella") == "a"
 
-    async def test_synthesize_stream_yields_chunks(self):
+    async def test_synthesize_stream_batch_yields_chunks(self):
         from app.services.speech.kokoro_tts import KokoroTTSProvider
 
-        provider = KokoroTTSProvider(base_url="http://localhost:8880")
+        provider = KokoroTTSProvider(model_dir="data/kokoro", streaming=False)
+        mock_audio = MagicMock()
+        mock_audio.numpy.return_value = __import__("numpy").zeros(32, dtype=__import__("numpy").float32)
+        mock_result = MagicMock()
+        mock_result.audio = mock_audio
+        mock_pipeline = MagicMock(return_value=iter([mock_result]))
 
-        chunks = [b"kokoro-chunk1", b"kokoro-chunk2"]
-
-        async def mock_aiter_bytes(chunk_size):
-            for chunk in chunks:
-                yield chunk
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.aiter_bytes = mock_aiter_bytes
-
-        mock_stream = AsyncMock()
-        mock_stream.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_stream.__aexit__ = AsyncMock(return_value=False)
-
-        with patch.object(provider, "_client") as mock_client:
-            mock_client.stream = MagicMock(return_value=mock_stream)
+        with patch.object(provider, "_get_pipeline", return_value=mock_pipeline), patch.object(
+            provider,
+            "_wav_to_mp3_bytes",
+            return_value=b"kokoro-chunk1kokoro-chunk2",
+        ):
             collected = []
             async for chunk in provider.synthesize_stream(text="Hello", voice_id="af_bella"):
                 collected.append(chunk)
 
-        assert collected == chunks
+        assert b"".join(collected) == b"kokoro-chunk1kokoro-chunk2"
+
+    async def test_synthesize_stream_streaming_yields_mp3(self):
+        from app.services.speech.kokoro_tts import KokoroTTSProvider
+
+        provider = KokoroTTSProvider(model_dir="data/kokoro", streaming=True)
+        mock_audio = MagicMock()
+        mock_audio.numpy.return_value = __import__("numpy").zeros(2400, dtype=__import__("numpy").float32)
+        mock_result = MagicMock()
+        mock_result.audio = mock_audio
+        mock_pipeline = MagicMock(return_value=iter([mock_result]))
+
+        with patch.object(provider, "_get_pipeline", return_value=mock_pipeline):
+            collected = []
+            async for chunk in provider.synthesize_stream(text="Hello", voice_id="af_bella"):
+                collected.append(chunk)
+
+        audio = b"".join(collected)
+        assert len(audio) > 0
+        assert audio[:3] == b"ID3" or audio[:2] == b"\xff\xfb"
 
     async def test_list_voices_success(self):
         from app.services.speech.kokoro_tts import KokoroTTSProvider
 
-        provider = KokoroTTSProvider(base_url="http://localhost:8880")
+        provider = KokoroTTSProvider(model_dir="data/kokoro")
+        voices = await provider.list_voices()
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "voices": [
-                {"voice_id": "af_bella", "name": "Bella"},
-                {"voice_id": "af_sky", "name": "Sky"},
-            ]
-        }
-        mock_response.raise_for_status = MagicMock()
+        # Full catalog of known Kokoro-82M voices
+        assert len(voices) >= 50
+        voice_ids = {v.voice_id for v in voices}
+        assert "af_bella" in voice_ids
+        assert "am_adam" in voice_ids
+        # Human-readable names with language/gender labels
+        bella = next(v for v in voices if v.voice_id == "af_bella")
+        assert "Bella" in bella.name
+        assert bella.labels is not None
+        assert bella.labels.get("language") == "American English"
 
-        with patch.object(provider, "_client") as mock_client:
-            mock_client.get = AsyncMock(return_value=mock_response)
+
+# ---------------------------------------------------------------------------
+# PiperTTSProvider tests
+# ---------------------------------------------------------------------------
+
+
+class TestPiperTTSProvider:
+    """Tests for Piper (OpenAI-compatible) TTS provider with mocked HTTP client."""
+
+    def test_provider_name(self):
+        from app.services.speech.piper_tts import PiperTTSProvider
+
+        provider = PiperTTSProvider(model_dir="data/piper")
+        assert provider.provider_name == "Piper TTS"
+
+    def test_default_voice_id(self):
+        from app.services.speech.piper_tts import PiperTTSProvider
+
+        provider = PiperTTSProvider(model_dir="data/piper", default_voice="en_US-lessac-medium")
+        assert provider.default_voice_id == "en_US-lessac-medium"
+
+    async def test_is_available_success(self):
+        from app.services.speech.piper_tts import PiperTTSProvider
+
+        provider = PiperTTSProvider(model_dir="data/piper")
+
+        with patch.object(provider, "_load_voice", return_value=object()):
+            assert await provider.is_available() is True
+
+    async def test_is_available_failure(self):
+        from app.services.speech.piper_tts import PiperTTSProvider
+
+        provider = PiperTTSProvider(model_dir="data/piper")
+
+        with patch.object(provider, "_load_voice", side_effect=RuntimeError("missing voice")):
+            assert await provider.is_available() is False
+
+    async def test_synthesize_stream_batch_yields_chunks(self):
+        from app.services.speech.piper_tts import PiperTTSProvider
+
+        provider = PiperTTSProvider(model_dir="data/piper", streaming=False)
+        mock_voice = MagicMock()
+
+        def write_wav(text, wav_file):
+            wav_file.setframerate(22050)
+            wav_file.setsampwidth(2)
+            wav_file.setnchannels(1)
+            wav_file.writeframes(b"\x00\x00" * 32)
+
+        mock_voice.synthesize_wav.side_effect = write_wav
+
+        with patch.object(provider, "_load_voice", return_value=mock_voice), patch.object(
+            provider,
+            "_wav_to_mp3_bytes",
+            return_value=b"piper-chunk1piper-chunk2",
+        ):
+            collected = []
+            async for chunk in provider.synthesize_stream(text="Hello", voice_id="en_US-lessac-medium"):
+                collected.append(chunk)
+
+        assert b"".join(collected) == b"piper-chunk1piper-chunk2"
+
+    async def test_synthesize_stream_streaming_yields_mp3(self):
+        from app.services.speech.piper_tts import PiperTTSProvider
+
+        provider = PiperTTSProvider(model_dir="data/piper", streaming=True)
+        mock_voice = MagicMock()
+        mock_voice.config.sample_rate = 22050
+
+        mock_chunk = MagicMock()
+        mock_chunk.audio_float_array = __import__("numpy").zeros(2205, dtype=__import__("numpy").float32)
+        mock_voice.synthesize.return_value = iter([mock_chunk])
+
+        with patch.object(provider, "_load_voice", return_value=mock_voice):
+            collected = []
+            async for chunk in provider.synthesize_stream(text="Hello", voice_id="en_US-lessac-medium"):
+                collected.append(chunk)
+
+        audio = b"".join(collected)
+        assert len(audio) > 0
+        assert audio[:3] == b"ID3" or audio[:2] == b"\xff\xfb"
+
+    async def test_list_voices_returns_full_catalog(self):
+        from app.services.speech.piper_tts import PiperTTSProvider
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            provider = PiperTTSProvider(model_dir=tmp_dir)
+            model_dir = provider._model_dir
+            model_dir.mkdir(parents=True, exist_ok=True)
+            (model_dir / "en_US-lessac-medium.onnx").write_bytes(b"model")
+
             voices = await provider.list_voices()
 
-        assert len(voices) == 2
-        assert voices[0].voice_id == "af_bella"
+            # Should return the full online catalog (150+)
+            assert len(voices) >= 100
+            # Downloaded voices should be marked
+            lessac = next((v for v in voices if v.voice_id == "en_US-lessac-medium"), None)
+            assert lessac is not None
+            assert "Lessac" in lessac.name
+            assert lessac.labels is not None
+            assert lessac.labels.get("downloaded") == "true"
+            # Non-downloaded voices should not have the label
+            other = next((v for v in voices if v.voice_id != "en_US-lessac-medium"), None)
+            assert other is not None
+            assert other.labels is None
 
-    async def test_list_voices_fallback_on_error(self):
-        from app.services.speech.kokoro_tts import KokoroTTSProvider
+    async def test_list_voices_fallback_to_local_on_network_error(self):
+        import app.services.speech.piper_tts as piper_mod
+        from app.services.speech.piper_tts import PiperTTSProvider
+        import tempfile
 
-        provider = KokoroTTSProvider(base_url="http://localhost:8880")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            provider = PiperTTSProvider(model_dir=tmp_dir)
+            model_dir = provider._model_dir
+            model_dir.mkdir(parents=True, exist_ok=True)
+            (model_dir / "en_US-lessac-medium.onnx").write_bytes(b"model")
 
-        with patch.object(provider, "_client") as mock_client:
-            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
-            voices = await provider.list_voices()
+            # Clear the module-level catalog cache so the fallback path is hit
+            old_cache = piper_mod._catalog_cache
+            piper_mod._catalog_cache = None
 
-        # Should return fallback default voice
-        assert len(voices) >= 1
-        assert voices[0].voice_id == "af_bella"
+            try:
+                with patch("app.services.speech.piper_tts.urlopen", side_effect=OSError("network error")):
+                    voices = await provider.list_voices()
+            finally:
+                piper_mod._catalog_cache = old_cache
+
+            # Fallback: only local voices
+            assert len(voices) == 1
+            assert voices[0].voice_id == "en_US-lessac-medium"
+            assert "Lessac" in voices[0].name
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +591,7 @@ class TestSpeechConfig:
         from app.core.config import Settings
 
         s = Settings(_env_file=None)
-        assert s.tts_provider == "elevenlabs"
+        assert s.tts_provider == "piper"
 
     def test_stt_provider_default(self):
         from app.core.config import Settings
@@ -499,6 +622,18 @@ class TestSpeechConfig:
 
         s = Settings(_env_file=None)
         assert s.kokoro_voice == "af_bella"
+
+    def test_piper_model_dir_default(self):
+        from app.core.config import Settings
+
+        s = Settings(_env_file=None)
+        assert s.piper_model_dir == "data/piper"
+
+    def test_piper_voice_default(self):
+        from app.core.config import Settings
+
+        s = Settings(_env_file=None)
+        assert s.piper_voice == "en_US-lessac-medium"
 
     def test_elevenlabs_tts_voice_id_default_empty(self):
         from app.core.config import Settings

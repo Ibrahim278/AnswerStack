@@ -20,6 +20,8 @@ class SettingsResponse(BaseModel):
     top_k: int
     similarity_threshold: float
     reranker_enabled: bool
+    tts_provider: str
+    tts_voice_id: str
     provider_capabilities: dict | None
     updated_at: datetime
 
@@ -45,6 +47,8 @@ class SettingsUpdate(BaseModel):
     top_k: int | None = Field(None, ge=1, le=50)
     similarity_threshold: float | None = Field(None, ge=0.0, le=1.0)
     reranker_enabled: bool | None = None
+    tts_provider: str | None = Field(None, max_length=50)
+    tts_voice_id: str | None = Field(None, max_length=255)
 
     @field_validator("provider_url")
     @classmethod

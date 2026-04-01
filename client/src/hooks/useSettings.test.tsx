@@ -28,6 +28,8 @@ function makeSettings(): SettingsResponse {
     top_k: 5,
     similarity_threshold: 0.5,
     reranker_enabled: false,
+    tts_provider: '',
+    tts_voice_id: '',
     provider_capabilities: null,
     updated_at: '2026-03-29T00:00:00Z',
   };

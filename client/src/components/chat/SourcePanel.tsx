@@ -145,7 +145,7 @@ export function SourcePanel({ messages }: SourcePanelProps) {
 
       {/* Source cards or empty state */}
       <ScrollArea className="flex-1">
-        <div ref={scrollContainerRef} className="p-4">
+        <div ref={scrollContainerRef} className="p-4 min-w-0 overflow-hidden">
           {displaySources.length === 0 ? (
             <SourcePanelEmpty />
           ) : (

@@ -87,7 +87,7 @@ export function SourceCard({ source, index, highlighted }: SourceCardProps) {
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 block mb-1.5">
           Evidence excerpt
         </span>
-        <div className="text-xs text-muted-foreground leading-relaxed prose prose-xs prose-slate dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_pre]:text-[10px] [&_pre]:p-2 [&_pre]:rounded [&_pre]:bg-muted [&_code]:text-[10px] [&_table]:text-[10px] [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-medium [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-2 [&_blockquote]:text-muted-foreground">
+        <div className="text-xs text-muted-foreground leading-relaxed prose prose-xs prose-slate dark:prose-invert max-w-none break-words overflow-hidden [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_pre]:text-[10px] [&_pre]:p-2 [&_pre]:rounded [&_pre]:bg-muted [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_pre]:break-all [&_code]:text-[10px] [&_code]:break-all [&_table]:text-[10px] [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-medium [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-2 [&_blockquote]:text-muted-foreground">
           <Markdown remarkPlugins={remarkPlugins}>{displayText}</Markdown>
         </div>
       </div>

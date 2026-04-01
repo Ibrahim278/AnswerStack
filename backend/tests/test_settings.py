@@ -265,3 +265,100 @@ async def test_empty_update_returns_current(async_client):
     after_data = response.json()
     assert after_data["temperature"] == before_data["temperature"]
     assert after_data["chunk_size"] == before_data["chunk_size"]
+
+
+# --- TTS voice settings ---
+
+
+async def test_get_settings_includes_tts_fields(async_client):
+    """GET /settings returns tts_provider and tts_voice_id fields with empty defaults."""
+    response = await async_client.get("/api/v1/settings")
+    assert response.status_code == 200
+    data = response.json()
+    assert "tts_provider" in data
+    assert data["tts_provider"] == ""
+    assert "tts_voice_id" in data
+    assert data["tts_voice_id"] == ""
+
+
+async def test_update_tts_provider(async_client):
+    """PUT /settings with tts_provider persists the selection."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"tts_provider": "piper"},
+    )
+    assert response.status_code == 200
+    assert response.json()["tts_provider"] == "piper"
+
+    # Verify it persists
+    get_response = await async_client.get("/api/v1/settings")
+    assert get_response.json()["tts_provider"] == "piper"
+
+
+async def test_reset_settings_clears_tts_provider(async_client):
+    """PUT /settings/reset resets tts_provider to empty default."""
+    await async_client.put("/api/v1/settings", json={"tts_provider": "kokoro"})
+
+    response = await async_client.put("/api/v1/settings/reset")
+    assert response.status_code == 200
+    assert response.json()["tts_provider"] == ""
+
+
+async def test_update_tts_voice_id(async_client):
+    """PUT /settings with tts_voice_id persists the selection."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"tts_voice_id": "af_bella"},
+    )
+    assert response.status_code == 200
+    assert response.json()["tts_voice_id"] == "af_bella"
+
+    # Verify it persists
+    get_response = await async_client.get("/api/v1/settings")
+    assert get_response.json()["tts_voice_id"] == "af_bella"
+
+
+async def test_update_tts_voice_id_syncs_to_app_state(async_client):
+    """PUT /settings with tts_voice_id updates app.state.tts_default_voice_id."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"tts_voice_id": "en_US-lessac-medium"},
+    )
+    assert response.status_code == 200
+
+    # The app fixture gives us access to the app state
+    from httpx import ASGITransport
+    transport = async_client._transport
+    if isinstance(transport, ASGITransport):
+        app = transport.app
+        assert getattr(app.state, "tts_default_voice_id", None) == "en_US-lessac-medium"
+
+
+async def test_reset_settings_clears_tts_voice_id(async_client):
+    """PUT /settings/reset resets tts_voice_id to empty default."""
+    # Set a voice first
+    await async_client.put("/api/v1/settings", json={"tts_voice_id": "af_bella"})
+
+    # Reset
+    response = await async_client.put("/api/v1/settings/reset")
+    assert response.status_code == 200
+    assert response.json()["tts_voice_id"] == ""
+
+
+async def test_tts_voice_id_validation_max_length(async_client):
+    """tts_voice_id exceeding 255 chars returns 422."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"tts_voice_id": "x" * 256},
+    )
+    assert response.status_code == 422
+
+
+async def test_partial_update_preserves_tts_voice_id(async_client):
+    """Updating other fields does not change tts_voice_id."""
+    await async_client.put("/api/v1/settings", json={"tts_voice_id": "af_sky"})
+
+    # Update temperature only
+    response = await async_client.put("/api/v1/settings", json={"temperature": 0.8})
+    assert response.status_code == 200
+    assert response.json()["tts_voice_id"] == "af_sky"

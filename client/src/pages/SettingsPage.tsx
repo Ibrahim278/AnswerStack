@@ -3,6 +3,7 @@ import { Save, Loader2, AlertCircle, CheckCircle2, XCircle } from 'lucide-react'
 import { useSettings, useUpdateSettings, useResetSettings } from '@/hooks/useSettings';
 import { Button } from '@/components/ui/button';
 import { BasicSettingsSection } from '@/components/settings/BasicSettingsSection';
+import { SpeechSettingsSection } from '@/components/settings/SpeechSettingsSection';
 import { AdvancedSettingsSection } from '@/components/settings/AdvancedSettingsSection';
 import type { SettingsResponse, SettingsUpdate } from '@/types';
 
@@ -18,6 +19,8 @@ type LocalSettings = {
   top_k: number;
   similarity_threshold: number;
   reranker_enabled: boolean;
+  tts_provider: string;
+  tts_voice_id: string;
 };
 
 const defaultLocal: LocalSettings = {
@@ -32,6 +35,8 @@ const defaultLocal: LocalSettings = {
   top_k: 5,
   similarity_threshold: 0.3,
   reranker_enabled: true,
+  tts_provider: '',
+  tts_voice_id: '',
 };
 
 function settingsToLocal(s: SettingsResponse): LocalSettings {
@@ -47,6 +52,8 @@ function settingsToLocal(s: SettingsResponse): LocalSettings {
     top_k: s.top_k,
     similarity_threshold: s.similarity_threshold,
     reranker_enabled: s.reranker_enabled,
+    tts_provider: s.tts_provider,
+    tts_voice_id: s.tts_voice_id,
   };
 }
 
@@ -150,6 +157,8 @@ export default function SettingsPage() {
 
       <div className="space-y-6">
         <BasicSettingsSection localConfig={localConfig} update={update} />
+
+        <SpeechSettingsSection localConfig={localConfig} update={update} />
 
         <AdvancedSettingsSection
           localConfig={localConfig}

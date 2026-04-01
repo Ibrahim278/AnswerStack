@@ -158,8 +158,11 @@ async def stream_chat(
                 else:
                     session = await chat_service.create_session(project_id)
 
-                # Save user message
-                await chat_service.add_message(session.id, "user", body.question)
+                # On retry: remove previous assistant response instead of adding a duplicate user message
+                if body.retry and body.session_id:
+                    await chat_service.delete_last_assistant_message(session.id)
+                else:
+                    await chat_service.add_message(session.id, "user", body.question)
                 await db_session.commit()
 
                 # Auto-title on first message

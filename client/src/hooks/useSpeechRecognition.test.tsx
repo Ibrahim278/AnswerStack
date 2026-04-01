@@ -60,6 +60,7 @@ describe('useSpeechRecognition (backend-proxied)', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     resetChatStore();
   });
 
@@ -353,30 +354,85 @@ describe('useSpeechRecognition (backend-proxied)', () => {
     expect(onCancel).toHaveBeenCalledWith('Restore me');
   });
 
-  it('startCapture returns false when preflight reports pending permission', async () => {
-    const onCancel = vi.fn();
+  it('surfaces pending permission state while getUserMedia is still awaiting approval', async () => {
+    vi.useFakeTimers();
+    let resolveGetUserMedia: ((stream: MediaStream) => void) | undefined;
 
     const { result } = renderHook(() =>
       useSpeechRecognition({
         value: 'Question',
         onInterimText: vi.fn(),
         onCommit: vi.fn(),
-        onCancel,
-        getUserMediaFn: async () => createMockStream(),
+        onCancel: vi.fn(),
+        getUserMediaFn: () =>
+          new Promise<MediaStream>((resolve) => {
+            resolveGetUserMedia = resolve;
+          }),
         createCaptureFn: () => createMockCapture(),
         queryPermission: async () => 'prompt',
-        requestPreflight: async () => ({ ok: false, reason: 'pending' }),
       }),
     );
 
-    let started: boolean | undefined;
+    const startPromise = result.current.startCapture();
+
     await act(async () => {
-      started = await result.current.startCapture();
+      await Promise.resolve();
+      vi.advanceTimersByTime(4_000);
+      await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(started).toBe(false);
-    expect(onCancel).toHaveBeenCalledWith('Question');
     expect(useChatStore.getState().microphonePermission).toBe('pending');
+    expect(useChatStore.getState().speechRecognitionState).toBe('arming');
+
+    act(() => {
+      result.current.cancelCapture();
+    });
+
+    await act(async () => {
+      resolveGetUserMedia?.(createMockStream());
+      await startPromise;
+    });
+  });
+
+  it('does not continue into listening after capture is cancelled while getUserMedia is still pending', async () => {
+    let resolveGetUserMedia: ((stream: MediaStream) => void) | undefined;
+    const stream = createMockStream();
+    const getUserMediaFn = vi.fn(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          resolveGetUserMedia = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() =>
+      useSpeechRecognition({
+        value: 'Question',
+        onInterimText: vi.fn(),
+        onCommit: vi.fn(),
+        onCancel: vi.fn(),
+        getUserMediaFn,
+        createCaptureFn: () => createMockCapture(),
+        queryPermission: async () => 'granted',
+      }),
+    );
+
+    const startPromise = result.current.startCapture();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.cancelCapture();
+    });
+
+    await act(async () => {
+      resolveGetUserMedia?.(stream);
+      await startPromise;
+    });
+
+    expect(useChatStore.getState().speechRecognitionState).toBe('idle');
+    expect(getUserMediaFn).toHaveBeenCalledTimes(1);
   });
 
   it('60-second timeout auto-commits recording', async () => {

@@ -81,6 +81,8 @@ export interface SettingsResponse {
   top_k: number;
   similarity_threshold: number;
   reranker_enabled: boolean;
+  tts_provider: string;
+  tts_voice_id: string;
   provider_capabilities: Record<string, unknown> | null;
   updated_at: string;
 }
@@ -97,6 +99,8 @@ export interface SettingsUpdate {
   top_k?: number | null;
   similarity_threshold?: number | null;
   reranker_enabled?: boolean | null;
+  tts_provider?: string | null;
+  tts_voice_id?: string | null;
 }
 
 // --- Indexing ---

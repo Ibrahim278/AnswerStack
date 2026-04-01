@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   buildSpeechErrorNotice,
   queryMicrophonePermission,
-  requestMicrophonePreflight,
   watchMicrophonePermission,
 } from '@/lib/speech';
 import { createAudioCapture, type AudioCapture } from '@/lib/audioCapture';
@@ -10,7 +9,6 @@ import { transcribeAudio } from '@/api/speech';
 import { useChatStore } from '@/stores/chatStore';
 import type {
   MicrophonePermissionState,
-  MicrophonePreflightResult,
   SpeechErrorNotice,
 } from '@/types/speech';
 
@@ -19,6 +17,7 @@ const MIN_BLOB_SIZE = 100;
 
 /** Maximum recording duration before auto-commit (ms). */
 const MAX_RECORDING_DURATION_MS = 60_000;
+const PENDING_PERMISSION_NOTICE_DELAY_MS = 4_000;
 
 interface UseSpeechRecognitionOptions {
   value: string;
@@ -30,7 +29,6 @@ interface UseSpeechRecognitionOptions {
   createCaptureFn?: (stream: MediaStream) => AudioCapture;
   transcribeFn?: (blob: Blob, mimeType: string, lang: string) => Promise<{ text: string }>;
   queryPermission?: () => Promise<MicrophonePermissionState>;
-  requestPreflight?: () => Promise<MicrophonePreflightResult>;
 }
 
 interface UseSpeechRecognitionResult {
@@ -72,14 +70,15 @@ export function useSpeechRecognition({
   createCaptureFn,
   transcribeFn,
   queryPermission = queryMicrophonePermission,
-  requestPreflight = requestMicrophonePreflight,
 }: UseSpeechRecognitionOptions): UseSpeechRecognitionResult {
   const captureRef = useRef<AudioCapture | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const committedPrefixRef = useRef('');
   const permissionCleanupRef = useRef<() => void>(() => {});
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armingNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hadPermissionSuccessRef = useRef(false);
+  const captureSessionRef = useRef(0);
 
   // Callback refs to avoid stale closures
   const onInterimTextRef = useRef(onInterimText);
@@ -101,15 +100,29 @@ export function useSpeechRecognition({
     }
   }, []);
 
+  const clearArmingNoticeTimeout = useCallback(() => {
+    if (armingNoticeTimeoutRef.current !== null) {
+      clearTimeout(armingNoticeTimeoutRef.current);
+      armingNoticeTimeoutRef.current = null;
+    }
+  }, []);
+
+  const isActiveCaptureSession = useCallback(
+    (sessionId: number) => captureSessionRef.current === sessionId,
+    [],
+  );
+
   const cancelActiveCapture = useCallback(() => {
+    captureSessionRef.current += 1;
     clearRecordingTimeout();
+    clearArmingNoticeTimeout();
     const capture = captureRef.current;
     if (capture) {
       capture.cancel();
       captureRef.current = null;
     }
     streamRef.current = null;
-  }, [clearRecordingTimeout]);
+  }, [clearArmingNoticeTimeout, clearRecordingTimeout]);
 
   const cleanupStoreState = useCallback(() => {
     const state = useChatStore.getState();
@@ -176,6 +189,7 @@ export function useSpeechRecognition({
   const commitCaptureImpl = useCallback(async () => {
     const state = useChatStore.getState();
     clearRecordingTimeout();
+    clearArmingNoticeTimeout();
 
     state.setSpeechProcessing();
 
@@ -218,7 +232,7 @@ export function useSpeechRecognition({
       state.setSpeechRecognitionError(buildSpeechErrorNotice('network'));
       onCancelRef.current(committedPrefixRef.current);
     }
-  }, [clearRecordingTimeout, transcribeFn]);
+  }, [clearArmingNoticeTimeout, clearRecordingTimeout, transcribeFn]);
 
   const commitCapture = useCallback(async () => {
     await commitCaptureImpl();
@@ -233,32 +247,19 @@ export function useSpeechRecognition({
 
   const startCapture = useCallback(async () => {
     const state = useChatStore.getState();
+    const sessionId = captureSessionRef.current + 1;
+    captureSessionRef.current = sessionId;
 
     committedPrefixRef.current = value;
     state.beginSpeechCapture(value);
 
     // Check microphone permission
     let permission = await queryPermission();
-    state.setMicrophonePermission(permission);
-
-    if (permission === 'prompt' || permission === 'unsupported') {
-      const preflight = await requestPreflight();
-
-      if (!preflight.ok) {
-        if (preflight.reason === 'pending') {
-          state.setMicrophonePermission('pending');
-        } else if (preflight.reason === 'not-allowed') {
-          state.setMicrophonePermission('denied');
-        }
-
-        onCancelRef.current(committedPrefixRef.current);
-        state.setSpeechRecognitionError(buildSpeechErrorNotice(preflight.reason));
-        return false;
-      }
-
-      permission = 'granted';
-      state.setMicrophonePermission(permission);
+    if (!isActiveCaptureSession(sessionId)) {
+      return false;
     }
+
+    state.setMicrophonePermission(permission);
 
     if (permission === 'denied') {
       onCancelRef.current(committedPrefixRef.current);
@@ -266,12 +267,27 @@ export function useSpeechRecognition({
       return false;
     }
 
+    armingNoticeTimeoutRef.current = setTimeout(() => {
+      if (!isActiveCaptureSession(sessionId)) {
+        return;
+      }
+
+      if (!captureRef.current && !streamRef.current) {
+        useChatStore.getState().setMicrophonePermission('pending');
+      }
+    }, PENDING_PERMISSION_NOTICE_DELAY_MS);
+
     // Acquire microphone stream
     const doGetUserMedia = getUserMediaFn ?? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     let stream: MediaStream;
     try {
       stream = await doGetUserMedia({ audio: true });
     } catch (error) {
+      clearArmingNoticeTimeout();
+      if (!isActiveCaptureSession(sessionId)) {
+        return false;
+      }
+
       const notice = normalizeGetUserMediaError(error);
       if (notice.code === 'not-allowed') {
         state.setMicrophonePermission('denied');
@@ -281,6 +297,15 @@ export function useSpeechRecognition({
       return false;
     }
 
+    clearArmingNoticeTimeout();
+    if (!isActiveCaptureSession(sessionId)) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      return false;
+    }
+
+    state.setMicrophonePermission('granted');
     streamRef.current = stream;
     hadPermissionSuccessRef.current = true;
 
@@ -290,7 +315,18 @@ export function useSpeechRecognition({
     captureRef.current = capture;
 
     // Start recording
-    capture.start();
+    try {
+      capture.start();
+    } catch {
+      captureRef.current = null;
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      streamRef.current = null;
+      state.setSpeechRecognitionError(buildSpeechErrorNotice('audio-capture'));
+      onCancelRef.current(committedPrefixRef.current);
+      return false;
+    }
     state.setSpeechListening();
     onStartRef.current?.();
 
@@ -305,7 +341,8 @@ export function useSpeechRecognition({
     createCaptureFn,
     getUserMediaFn,
     queryPermission,
-    requestPreflight,
+    isActiveCaptureSession,
+    clearArmingNoticeTimeout,
     value,
   ]);
 

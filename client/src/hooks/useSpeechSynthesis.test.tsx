@@ -7,60 +7,45 @@ function resetChatStore() {
   useChatStore.setState(useChatStore.getInitialState(), true);
 }
 
-// Mock Audio element
-class MockAudio {
+class MockAudioElement {
   src = '';
-  onplay: (() => void) | null = null;
+  onplaying: (() => void) | null = null;
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  play = vi.fn(async () => {
-    this.onplay?.();
-  });
   pause = vi.fn();
+  load = vi.fn();
+  removeAttribute = vi.fn();
+  play = vi.fn(async () => {
+    this.onplaying?.();
+  });
 }
 
-describe('useSpeechSynthesis (backend-proxied)', () => {
-  let originalAudio: typeof Audio;
-  let lastAudio: MockAudio;
+let lastAudio: MockAudioElement;
+const originalAudio = globalThis.Audio;
 
-  const mockCreateObjectURL = vi.fn(() => 'blob:mock-url');
-  const mockRevokeObjectURL = vi.fn();
-
+describe('useSpeechSynthesis (streaming audio element)', () => {
   beforeEach(() => {
     resetChatStore();
     useChatStore.setState({
       speechCapabilities: { stt: 'unavailable', tts: 'available' },
     });
 
-    // Mock Audio constructor
-    originalAudio = globalThis.Audio;
-    lastAudio = new MockAudio();
+    lastAudio = new MockAudioElement();
     globalThis.Audio = vi.fn(() => lastAudio) as unknown as typeof Audio;
-
-    // Mock URL methods -- define directly since jsdom doesn't have them
-    mockCreateObjectURL.mockClear();
-    mockRevokeObjectURL.mockClear();
-    URL.createObjectURL = mockCreateObjectURL as unknown as typeof URL.createObjectURL;
-    URL.revokeObjectURL = mockRevokeObjectURL as unknown as typeof URL.revokeObjectURL;
   });
 
   afterEach(() => {
     globalThis.Audio = originalAudio;
-    // Do NOT delete URL.createObjectURL / URL.revokeObjectURL here --
-    // React cleanup effects may still reference them after afterEach runs.
-    // The next beforeEach will reset the mocks.
     resetChatStore();
   });
 
-  it('playMessage fetches audio and plays via Audio element', async () => {
-    const mockSynthesize = vi.fn(async () =>
-      new Blob(['fake-audio'], { type: 'audio/mpeg' }),
-    );
+  it('playMessage prepares URL and plays via audio element', async () => {
+    const mockPrepare = vi.fn(async () => '/api/v1/speech/synthesize/stream/abc123');
 
     const { result } = renderHook(() =>
       useSpeechSynthesis({
         getMessageText: () => 'Test answer text',
-        synthesizeFn: mockSynthesize,
+        prepareFn: mockPrepare,
       }),
     );
 
@@ -70,35 +55,31 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
     });
 
     expect(playResult).toBe(true);
-    expect(mockSynthesize).toHaveBeenCalledWith(
+    expect(mockPrepare).toHaveBeenCalledWith(
       'Test answer text',
       undefined,
       expect.any(AbortSignal),
     );
-    expect(mockCreateObjectURL).toHaveBeenCalled();
+    expect(globalThis.Audio).toHaveBeenCalledWith('/api/v1/speech/synthesize/stream/abc123');
     expect(lastAudio.play).toHaveBeenCalled();
     expect(useChatStore.getState().speechPlaybackState).toBe('playing');
     expect(useChatStore.getState().activePlaybackMessageId).toBe('msg-1');
   });
 
   it('playMessage toggles off when same message is playing', async () => {
-    const mockSynthesize = vi.fn(async () =>
-      new Blob(['fake-audio'], { type: 'audio/mpeg' }),
-    );
+    const mockPrepare = vi.fn(async () => '/stream/token');
 
     const { result } = renderHook(() =>
       useSpeechSynthesis({
         getMessageText: () => 'Answer',
-        synthesizeFn: mockSynthesize,
+        prepareFn: mockPrepare,
       }),
     );
 
-    // Play first
     await act(async () => {
       await result.current.playMessage('msg-1');
     });
 
-    // Toggle off
     let playResult: boolean | undefined;
     await act(async () => {
       playResult = await result.current.playMessage('msg-1');
@@ -110,45 +91,42 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
   });
 
   it('playMessage stops previous before starting new', async () => {
-    const mockSynthesize = vi.fn(async () =>
-      new Blob(['fake-audio'], { type: 'audio/mpeg' }),
-    );
+    const mockPrepare = vi.fn(async () => '/stream/token');
 
     const { result } = renderHook(() =>
       useSpeechSynthesis({
         getMessageText: (id) => `Answer for ${id}`,
-        synthesizeFn: mockSynthesize,
+        prepareFn: mockPrepare,
       }),
     );
 
-    // Play message A
     await act(async () => {
       await result.current.playMessage('msg-a');
     });
 
     const firstAudio = lastAudio;
-    lastAudio = new MockAudio();
-    (globalThis.Audio as ReturnType<typeof vi.fn>).mockReturnValue(lastAudio);
+    lastAudio = new MockAudioElement();
+    (globalThis.Audio as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      () => lastAudio,
+    );
 
-    // Play message B -- should stop A first
     await act(async () => {
       await result.current.playMessage('msg-b');
     });
 
     expect(firstAudio.pause).toHaveBeenCalled();
-    expect(mockRevokeObjectURL).toHaveBeenCalled();
+    expect(firstAudio.removeAttribute).toHaveBeenCalledWith('src');
+    expect(firstAudio.load).toHaveBeenCalled();
     expect(useChatStore.getState().activePlaybackMessageId).toBe('msg-b');
   });
 
-  it('stopPlayback pauses audio and revokes blob URL', async () => {
-    const mockSynthesize = vi.fn(async () =>
-      new Blob(['fake-audio'], { type: 'audio/mpeg' }),
-    );
+  it('stopPlayback pauses audio and resets store', async () => {
+    const mockPrepare = vi.fn(async () => '/stream/token');
 
     const { result } = renderHook(() =>
       useSpeechSynthesis({
         getMessageText: () => 'Answer',
-        synthesizeFn: mockSynthesize,
+        prepareFn: mockPrepare,
       }),
     );
 
@@ -161,23 +139,23 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
     });
 
     expect(lastAudio.pause).toHaveBeenCalled();
-    expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+    expect(lastAudio.removeAttribute).toHaveBeenCalledWith('src');
+    expect(lastAudio.load).toHaveBeenCalled();
     expect(useChatStore.getState().speechPlaybackState).toBe('stopped');
     expect(useChatStore.getState().activePlaybackMessageId).toBeNull();
   });
 
-  it('stopPlayback aborts in-flight fetch', async () => {
+  it('stopPlayback aborts in-flight prepare request', async () => {
     let capturedSignal: AbortSignal | undefined;
-    const mockSynthesize = vi.fn(async (_text: string, _voiceId?: string, signal?: AbortSignal) => {
+    const mockPrepare = vi.fn(async (_text: string, _voiceId?: string, signal?: AbortSignal) => {
       capturedSignal = signal;
-      // Simulate a slow response
-      return new Blob(['fake-audio'], { type: 'audio/mpeg' });
+      return '/stream/token';
     });
 
     const { result } = renderHook(() =>
       useSpeechSynthesis({
         getMessageText: () => 'Answer',
-        synthesizeFn: mockSynthesize,
+        prepareFn: mockPrepare,
       }),
     );
 
@@ -192,15 +170,15 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
     expect(capturedSignal?.aborted).toBe(true);
   });
 
-  it('playMessage shows error when synthesis fails', async () => {
-    const mockSynthesize = vi.fn(async () => {
-      throw new Error('Synthesis failed: 503');
+  it('playMessage shows error when prepare fails', async () => {
+    const mockPrepare = vi.fn(async () => {
+      throw new Error('Synthesis preparation failed: 503');
     });
 
     const { result } = renderHook(() =>
       useSpeechSynthesis({
         getMessageText: () => 'Answer',
-        synthesizeFn: mockSynthesize,
+        prepareFn: mockPrepare,
       }),
     );
 
@@ -214,15 +192,57 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
     expect(useChatStore.getState().speechPlaybackErrorMessageId).toBe('msg-1');
   });
 
-  it('cleanup stops playback', async () => {
-    const mockSynthesize = vi.fn(async () =>
-      new Blob(['fake-audio'], { type: 'audio/mpeg' }),
-    );
+  it('audio onended resets store', async () => {
+    const mockPrepare = vi.fn(async () => '/stream/token');
 
     const { result } = renderHook(() =>
       useSpeechSynthesis({
         getMessageText: () => 'Answer',
-        synthesizeFn: mockSynthesize,
+        prepareFn: mockPrepare,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.playMessage('msg-1');
+    });
+
+    act(() => {
+      lastAudio.onended?.();
+    });
+
+    expect(useChatStore.getState().speechPlaybackState).toBe('stopped');
+    expect(useChatStore.getState().activePlaybackMessageId).toBeNull();
+  });
+
+  it('audio onerror sets error state', async () => {
+    const mockPrepare = vi.fn(async () => '/stream/token');
+
+    const { result } = renderHook(() =>
+      useSpeechSynthesis({
+        getMessageText: () => 'Answer',
+        prepareFn: mockPrepare,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.playMessage('msg-1');
+    });
+
+    act(() => {
+      lastAudio.onerror?.();
+    });
+
+    expect(useChatStore.getState().speechPlaybackState).toBe('error');
+    expect(useChatStore.getState().speechPlaybackErrorMessageId).toBe('msg-1');
+  });
+
+  it('cleanup stops playback', async () => {
+    const mockPrepare = vi.fn(async () => '/stream/token');
+
+    const { result } = renderHook(() =>
+      useSpeechSynthesis({
+        getMessageText: () => 'Answer',
+        prepareFn: mockPrepare,
       }),
     );
 
@@ -236,18 +256,41 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
 
     expect(lastAudio.pause).toHaveBeenCalled();
     expect(useChatStore.getState().speechPlaybackState).toBe('stopped');
-    expect(useChatStore.getState().activeSpeechMode).toBe('none');
   });
 
-  it('onended cleans up blob URL and resets store', async () => {
-    const mockSynthesize = vi.fn(async () =>
-      new Blob(['fake-audio'], { type: 'audio/mpeg' }),
-    );
+  it('ignores AbortError when prepare is cancelled', async () => {
+    const mockPrepare = vi.fn(async () => {
+      const err = new DOMException('The operation was aborted.', 'AbortError');
+      throw err;
+    });
 
     const { result } = renderHook(() =>
       useSpeechSynthesis({
         getMessageText: () => 'Answer',
-        synthesizeFn: mockSynthesize,
+        prepareFn: mockPrepare,
+      }),
+    );
+
+    let playResult: boolean | undefined;
+    await act(async () => {
+      playResult = await result.current.playMessage('msg-1');
+    });
+
+    expect(playResult).toBe(false);
+    // Should NOT set error state for abort
+    expect(useChatStore.getState().speechPlaybackState).not.toBe('error');
+  });
+
+  it('shows error when audio.play() is rejected', async () => {
+    const mockPrepare = vi.fn(async () => '/stream/token');
+    lastAudio.play = vi.fn(async () => {
+      throw new Error('play() not allowed');
+    });
+
+    const { result } = renderHook(() =>
+      useSpeechSynthesis({
+        getMessageText: () => 'Answer',
+        prepareFn: mockPrepare,
       }),
     );
 
@@ -255,13 +298,8 @@ describe('useSpeechSynthesis (backend-proxied)', () => {
       await result.current.playMessage('msg-1');
     });
 
-    // Simulate audio ended
-    act(() => {
-      lastAudio.onended?.();
+    await waitFor(() => {
+      expect(useChatStore.getState().speechPlaybackState).toBe('error');
     });
-
-    expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
-    expect(useChatStore.getState().speechPlaybackState).toBe('stopped');
-    expect(useChatStore.getState().activePlaybackMessageId).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { stripMarkdownAndCitations } from '@/utils/markdown';
+import { latexToSpeech, stripMarkdownAndCitations } from '@/utils/markdown';
 import { getSpeechCapabilities } from '@/api/speech';
 import { canCaptureAudio } from '@/lib/audioCapture';
 import type {
@@ -286,5 +286,5 @@ export function buildSpeechErrorNotice(
 }
 
 export function getPlainSpeechText(markdown: string) {
-  return stripMarkdownAndCitations(markdown);
+  return stripMarkdownAndCitations(latexToSpeech(markdown));
 }

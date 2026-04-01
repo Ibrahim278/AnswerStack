@@ -88,6 +88,10 @@ class ChatService:
         if not success:
             raise NotFoundError("chat_session", str(session_id))
 
+    async def delete_last_assistant_message(self, session_id: UUID) -> bool:
+        """Delete the most recent assistant message in a session (for retry)."""
+        return await self._repo.delete_last_assistant_message(session_id)
+
     async def add_message(
         self,
         session_id: UUID,
