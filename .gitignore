@@ -32,5 +32,8 @@ build/
 *.swp
 *.swo
 
+# TLS certificates
+certs/
+
 #Other
 screenshots/
