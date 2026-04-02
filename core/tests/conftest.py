@@ -1,5 +1,7 @@
 """Shared test fixtures for core/answerstack tests."""
 
+import tempfile
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -67,3 +69,24 @@ def vector_results():
         ],
         "distances": [0.1, 0.3, 0.5],
     }
+
+
+@pytest.fixture
+def tmp_chromadb_dir():
+    """Temporary directory for ChromaDB data."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield tmpdir
+
+
+@pytest.fixture
+def sample_config(tmp_chromadb_dir):
+    """RAGConfig with test values."""
+    from answerstack.config import RAGConfig
+
+    return RAGConfig(
+        provider_url="http://localhost:1234/v1",
+        data_dir=tmp_chromadb_dir,
+        provider_api_key="test-key",
+        embedding_model="test-embed",
+        provider_model="test-model",
+    )
