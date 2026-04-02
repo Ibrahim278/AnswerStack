@@ -283,7 +283,7 @@ async def test_delete_indexed_document_keeps_project_consistent(project_with_par
     assert all(doc["status"] == "indexed" for doc in remaining_docs)
     mock_vector_repo.delete_document_embeddings.assert_called_once()
     call_args = mock_vector_repo.delete_document_embeddings.call_args[0]
-    assert str(call_args[0]) == project_id
+    assert call_args[0] == f"project_{project_id}"
     assert str(call_args[1]) == victim["id"]
 
     status_resp = await client.get(f"/api/v1/projects/{project_id}/indexing/status")
