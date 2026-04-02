@@ -1,64 +1,9 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+"""Re-export parsers from answerstack core package.
 
+Existing backend code continues to use ``from app.parsers import ...``
+while the implementation lives in answerstack.parsers.
+"""
 
-@dataclass
-class ParseResult:
-    """Result of parsing a document."""
+from answerstack.parsers import DocumentParser, ParseResult, get_parser_for_extension
 
-    text: str
-    page_count: int | None = None
-    metadata: dict | None = field(default=None)
-
-
-class DocumentParser(ABC):
-    """Abstract base class for document parsers."""
-
-    @abstractmethod
-    def parse(self, content: bytes, filename: str) -> ParseResult:
-        """Parse document content and return extracted text.
-
-        Args:
-            content: Raw file bytes.
-            filename: Original filename (used for error messages).
-
-        Returns:
-            ParseResult with extracted text and optional metadata.
-        """
-
-    @abstractmethod
-    def supported_extensions(self) -> set[str]:
-        """Return the set of file extensions this parser supports.
-
-        Extensions include the leading dot, e.g. {".txt"}.
-        """
-
-
-def get_parser_for_extension(extension: str) -> DocumentParser:
-    """Factory function that returns the appropriate parser for a file extension.
-
-    Args:
-        extension: File extension including dot, e.g. ".txt", ".md", ".pdf".
-                   Will be lowercased internally.
-
-    Returns:
-        An instance of the appropriate DocumentParser.
-
-    Raises:
-        ValueError: If the extension is not supported.
-    """
-    from app.parsers.markdown_parser import MarkdownParser
-    from app.parsers.pdf_parser import PdfParser
-    from app.parsers.text_parser import TextParser
-
-    ext = extension.lower()
-    parsers: dict[str, DocumentParser] = {
-        ".txt": TextParser(),
-        ".md": MarkdownParser(),
-        ".pdf": PdfParser(),
-    }
-
-    if ext not in parsers:
-        raise ValueError(f"Unsupported file extension: {extension}. Supported: {', '.join(sorted(parsers.keys()))}")
-
-    return parsers[ext]
+__all__ = ["DocumentParser", "ParseResult", "get_parser_for_extension"]

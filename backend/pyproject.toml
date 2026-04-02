@@ -5,16 +5,13 @@ description = "AnswerStack - Source-grounded question answering with trustworthy
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "answerstack",
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
-    "chromadb>=1.5.5",
     "fastapi>=0.135.2",
-    "flashrank>=0.2.10",
-    "openai>=2.29.0",
     "piper-tts>=1.4.1",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
-    "pymupdf4llm>=1.27.2.2",
     "python-dotenv>=1.2.2",
     "python-multipart>=0.0.22",
     "sqlalchemy[asyncio]>=2.0.48",
@@ -26,6 +23,9 @@ dependencies = [
     "httpx>=0.28.1",
     "kokoro>=0.9.4",
 ]
+
+[tool.uv.sources]
+answerstack = { workspace = true }
 
 [dependency-groups]
 dev = [

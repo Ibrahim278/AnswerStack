@@ -3,6 +3,7 @@ from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+import answerstack.errors as core_errors
 from app.schemas.error import ErrorResponse
 
 
@@ -116,3 +117,38 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
             request_id=_get_request_id(),
         ).model_dump(),
     )
+
+
+def translate_core_error(exc: core_errors.AnswerStackError) -> AppError:
+    """Translate answerstack core exceptions to backend HTTP errors."""
+    if isinstance(exc, core_errors.ProviderError):
+        return ProviderError(exc.message, retryable=exc.retryable)
+    if isinstance(exc, core_errors.ParsingError):
+        return AppError(
+            error_code="document.parsing_failed",
+            message=exc.message,
+            status_code=422,
+            retryable=False,
+            suggested_action="Check the document format and try again.",
+        )
+    if isinstance(exc, core_errors.VectorStoreError):
+        return AppError(
+            error_code="vector.store_error",
+            message=exc.message,
+            status_code=500,
+            retryable=True,
+            suggested_action="Try again. If the problem persists, check storage.",
+        )
+    return AppError(
+        error_code="core.error",
+        message=exc.message,
+        status_code=500,
+        retryable=True,
+        suggested_action="An unexpected error occurred in the core library.",
+    )
+
+
+async def core_error_handler(request: Request, exc: core_errors.AnswerStackError) -> JSONResponse:
+    """Handle answerstack core exceptions by translating to HTTP error responses."""
+    app_error = translate_core_error(exc)
+    return await app_error_handler(request, app_error)

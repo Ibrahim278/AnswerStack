@@ -1,13 +1,5 @@
-from app.parsers import DocumentParser, ParseResult
+"""Re-export from answerstack core."""
 
+from answerstack.parsers.text import TextParser
 
-class TextParser(DocumentParser):
-    """Parser for plain text (.txt) files."""
-
-    def parse(self, content: bytes, filename: str) -> ParseResult:
-        """Parse plain text content by decoding as UTF-8."""
-        text = content.decode("utf-8", errors="replace")
-        return ParseResult(text=text, page_count=None)
-
-    def supported_extensions(self) -> set[str]:
-        return {".txt"}
+__all__ = ["TextParser"]
