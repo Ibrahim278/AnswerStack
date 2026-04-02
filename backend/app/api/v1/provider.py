@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Request
 from app.core.dependencies import get_settings_service
 from app.core.errors import ProviderError
 from app.schemas.provider import CapabilityResult, ConnectionTestResult, ModelInfo, ModelListResponse
-from app.services.provider import ProviderService
+from answerstack.provider import ProviderService
 from app.services.settings import SettingsService
 
 router = APIRouter(prefix="/provider", tags=["provider"])

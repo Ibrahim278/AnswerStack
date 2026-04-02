@@ -388,8 +388,8 @@ async def test_vector_repo_isolation(project_with_parsed_docs, mock_vector_repo)
     upsert_calls = mock_vector_repo.upsert_embeddings.call_args_list
     assert len(upsert_calls) >= 1
 
-    call_project_id = upsert_calls[0][0][0]
-    assert str(call_project_id) == project_id
+    call_collection_name = upsert_calls[0][0][0]
+    assert call_collection_name == f"project_{project_id}"
 
 
 async def test_status_no_job(async_client_with_indexing):

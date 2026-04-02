@@ -6,12 +6,12 @@ from uuid import UUID
 
 import structlog
 
-from app.chunking.splitter import RecursiveTextSplitter
+from answerstack.chunking.splitter import RecursiveTextSplitter
+from answerstack.parsers import get_parser_for_extension
 from app.core.config import Settings
 from app.core.errors import NotFoundError
 from app.core.security import compute_bytes_hash, sanitize_filename, validate_storage_path
 from app.models.document import Chunk, Document, DocumentStatus
-from app.parsers import get_parser_for_extension
 from app.repositories.document import DocumentRepository
 from app.repositories.project import ProjectRepository
 from app.schemas.document import DocumentResponse, DocumentUploadResult, RejectedFile

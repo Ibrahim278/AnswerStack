@@ -40,7 +40,7 @@ async def test_list_models_empty(async_client_with_provider, mock_openai_client)
     empty_response.data = []
     mock_openai_client.models.list = AsyncMock(return_value=empty_response)
     # Clear cache to force re-fetch
-    from app.services.provider import ProviderService
+    from answerstack.provider import ProviderService
 
     # The provider_service on the client's app state needs its cache cleared
     # Access the app via the client's transport

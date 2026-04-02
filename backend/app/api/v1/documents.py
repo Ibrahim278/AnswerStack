@@ -132,8 +132,8 @@ async def delete_document(
     if was_indexed:
         await asyncio.to_thread(
             request.app.state.vector_repo.delete_document_embeddings,
-            project_id,
-            document_id,
+            f"project_{project_id}",
+            str(document_id),
         )
 
     new_status = await indexing_service.compute_stale_status(project_id)

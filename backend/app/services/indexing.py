@@ -13,17 +13,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.core.hashing import compute_chunk_params_hash
 
-from app.chunking.splitter import RecursiveTextSplitter
+from answerstack.chunking.splitter import RecursiveTextSplitter
+from answerstack.embedding import EmbeddingService
+from answerstack.parsers import get_parser_for_extension
+from answerstack.vector import VectorRepository
 from app.models.document import Chunk, Document, DocumentStatus
 from app.models.indexing_job import IndexingJob, IndexingJobStatus
 from app.models.project import Project
-from app.parsers import get_parser_for_extension
 from app.repositories.document import ChunkRepository, DocumentRepository
 from app.repositories.indexing_job import IndexingJobRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.settings import SettingsRepository
-from app.repositories.vector import VectorRepository
-from app.services.embedding import EmbeddingService
 
 logger = structlog.get_logger()
 
@@ -94,13 +94,15 @@ async def _vector_index_missing_or_out_of_sync(
     if not indexed_documents:
         return False
 
+    collection_name = f"project_{project_id}"
+
     if collection_exists is None:
-        collection_exists = await asyncio.to_thread(vector_repo.collection_exists, project_id)
+        collection_exists = await asyncio.to_thread(vector_repo.collection_exists, collection_name)
     if not collection_exists:
         return True
 
     if collection_count is None:
-        collection_count = await asyncio.to_thread(vector_repo.collection_count, project_id)
+        collection_count = await asyncio.to_thread(vector_repo.collection_count, collection_name)
     if collection_count == 0:
         return True
 
@@ -108,7 +110,7 @@ async def _vector_index_missing_or_out_of_sync(
     if collection_count != len(expected_chunk_ids):
         return True
 
-    vector_chunk_ids = set(await asyncio.to_thread(vector_repo.list_chunk_ids, project_id))
+    vector_chunk_ids = set(await asyncio.to_thread(vector_repo.list_chunk_ids, collection_name))
     return vector_chunk_ids != expected_chunk_ids
 
 
@@ -166,8 +168,9 @@ async def _cleanup_cancelled_run(
     current_document_id: UUID | None,
 ) -> None:
     """Clean up partial state left behind by a cancelled indexing run."""
+    collection_name = f"project_{project_id}"
     if full_rebuild and collection_rebuilt:
-        await asyncio.to_thread(vector_repo.delete_collection, project_id)
+        await asyncio.to_thread(vector_repo.delete_collection, collection_name)
 
     if full_rebuild:
         fallback_status = (
@@ -184,8 +187,8 @@ async def _cleanup_cancelled_run(
         if current_document_id is not None:
             await asyncio.to_thread(
                 vector_repo.delete_document_embeddings,
-                project_id,
-                current_document_id,
+                collection_name,
+                str(current_document_id),
             )
         fallback_status = (
             DocumentStatus.STALE if had_previous_index else DocumentStatus.PARSED
@@ -399,12 +402,13 @@ class IndexingService:
         if not indexed_documents:
             return []
 
+        collection_name = f"project_{project_id}"
         collection_exists = await asyncio.to_thread(
             self._vector_repo.collection_exists,
-            project_id,
+            collection_name,
         )
         collection_count = (
-            await asyncio.to_thread(self._vector_repo.collection_count, project_id)
+            await asyncio.to_thread(self._vector_repo.collection_count, collection_name)
             if collection_exists
             else 0
         )
@@ -654,11 +658,12 @@ async def run_indexing_job(
             )
             indexed_documents = _get_indexed_documents(all_documents)
             has_indexed_documents = bool(indexed_documents)
+            collection_name = f"project_{project_id}"
             collection_exists = await asyncio.to_thread(
-                vector_repo.collection_exists, project_id
+                vector_repo.collection_exists, collection_name
             )
             collection_count = (
-                await asyncio.to_thread(vector_repo.collection_count, project_id)
+                await asyncio.to_thread(vector_repo.collection_count, collection_name)
                 if collection_exists
                 else 0
             )
@@ -686,10 +691,10 @@ async def run_indexing_job(
                 return
 
             if full_rebuild:
-                await asyncio.to_thread(vector_repo.delete_collection, project_id)
-                await asyncio.to_thread(vector_repo.create_collection, project_id)
+                await asyncio.to_thread(vector_repo.delete_collection, collection_name)
+                await asyncio.to_thread(vector_repo.create_collection, collection_name)
             elif not collection_exists:
-                await asyncio.to_thread(vector_repo.create_collection, project_id)
+                await asyncio.to_thread(vector_repo.create_collection, collection_name)
 
             for i, doc in enumerate(documents):
                 # Cooperative cancellation check
@@ -771,8 +776,8 @@ async def run_indexing_job(
                 if not collection_rebuilt:
                     await asyncio.to_thread(
                         vector_repo.delete_document_embeddings,
-                        project_id,
-                        doc.id,
+                        collection_name,
+                        str(doc.id),
                     )
 
                 # Embed
@@ -801,7 +806,7 @@ async def run_indexing_job(
                 # Upsert into vector store
                 await asyncio.to_thread(
                     vector_repo.upsert_embeddings,
-                    project_id,
+                    collection_name,
                     chunk_ids,
                     embeddings,
                     texts,

@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from flashrank import RerankRequest
 
-from app.services.retrieval import RetrievalService, RetrievedChunk
+from answerstack.retrieval import RetrievalService, RetrievedChunk
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ async def test_two_stage_retrieval(
     project_id = uuid4()
 
     results = await service.retrieve(
-        project_id=project_id,
+        collection_name=f"project_{project_id}",
         query="What is the capital of France?",
         embedding_model="text-embedding-test",
         top_k=5,
@@ -94,7 +94,7 @@ async def test_retrieval_without_reranker(
     project_id = uuid4()
 
     results = await service.retrieve(
-        project_id=project_id,
+        collection_name=f"project_{project_id}",
         query="What is France?",
         embedding_model="text-embedding-test",
         top_k=5,
@@ -135,7 +135,7 @@ async def test_retrieval_no_results_returns_empty(
     project_id = uuid4()
 
     results = await service.retrieve(
-        project_id=project_id,
+        collection_name=f"project_{project_id}",
         query="Nonexistent topic",
         embedding_model="text-embedding-test",
     )
@@ -178,7 +178,7 @@ async def test_retrieval_all_below_threshold(
     project_id = uuid4()
 
     results = await service.retrieve(
-        project_id=project_id,
+        collection_name=f"project_{project_id}",
         query="Something irrelevant",
         embedding_model="text-embedding-test",
         similarity_threshold=0.3,

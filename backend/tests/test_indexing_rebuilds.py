@@ -231,18 +231,18 @@ async def test_trigger_build_detects_missing_chunk_id_and_rebuilds_indexed_docum
 
     docs = await _list_documents(client, project_id)
     original_chunk_ids = await _get_project_chunk_ids(client, project_id)
-    assert set(vector_store[project_id].keys()) == original_chunk_ids
+    assert set(vector_store[f"project_{project_id}"].keys()) == original_chunk_ids
 
     missing_chunk_id = next(iter(original_chunk_ids))
-    vector_store[project_id].pop(missing_chunk_id)
-    assert set(vector_store[project_id].keys()) == original_chunk_ids - {missing_chunk_id}
+    vector_store[f"project_{project_id}"].pop(missing_chunk_id)
+    assert set(vector_store[f"project_{project_id}"].keys()) == original_chunk_ids - {missing_chunk_id}
 
     build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
     assert build_resp.status_code == 202
 
     final_status = await _wait_for_index_status(client, project_id, "indexed")
     assert final_status["job"]["documents_total"] == len(docs)
-    assert set(vector_store[project_id].keys()) == original_chunk_ids
+    assert set(vector_store[f"project_{project_id}"].keys()) == original_chunk_ids
 
 
 async def test_trigger_build_detects_chunk_id_drift_when_vector_count_matches(
@@ -267,22 +267,22 @@ async def test_trigger_build_detects_chunk_id_drift_when_vector_count_matches(
 
     docs = await _list_documents(client, project_id)
     original_chunk_ids = await _get_project_chunk_ids(client, project_id)
-    removed_chunk_id, removed_payload = next(iter(vector_store[project_id].items()))
-    vector_store[project_id].pop(removed_chunk_id)
-    vector_store[project_id]["orphan-chunk-id"] = {
+    removed_chunk_id, removed_payload = next(iter(vector_store[f"project_{project_id}"].items()))
+    vector_store[f"project_{project_id}"].pop(removed_chunk_id)
+    vector_store[f"project_{project_id}"]["orphan-chunk-id"] = {
         **removed_payload,
         "metadata": {**removed_payload["metadata"], "chunk_index": 999},
     }
-    assert len(vector_store[project_id]) == len(original_chunk_ids)
-    assert set(vector_store[project_id].keys()) != original_chunk_ids
+    assert len(vector_store[f"project_{project_id}"]) == len(original_chunk_ids)
+    assert set(vector_store[f"project_{project_id}"].keys()) != original_chunk_ids
 
     build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
     assert build_resp.status_code == 202
 
     final_status = await _wait_for_index_status(client, project_id, "indexed")
     assert final_status["job"]["documents_total"] == len(docs)
-    assert set(vector_store[project_id].keys()) == original_chunk_ids
-    assert "orphan-chunk-id" not in vector_store[project_id]
+    assert set(vector_store[f"project_{project_id}"].keys()) == original_chunk_ids
+    assert "orphan-chunk-id" not in vector_store[f"project_{project_id}"]
 
 
 async def test_full_rebuild_cancel_at_zero_of_total_stays_stale(

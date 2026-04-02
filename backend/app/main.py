@@ -9,7 +9,15 @@ from fastapi.exceptions import RequestValidationError
 from app.api.v1.router import api_v1_router
 from app.core.config import get_settings
 from app.core.database import create_engine, create_session_factory
-from app.core.errors import AppError, app_error_handler, unhandled_error_handler, validation_error_handler
+from app.core.errors import (
+    AppError,
+    app_error_handler,
+    core_error_handler,
+    unhandled_error_handler,
+    validation_error_handler,
+)
+
+import answerstack.errors as core_errors
 from app.core.logging import configure_logging
 
 
@@ -46,7 +54,7 @@ async def lifespan(app: FastAPI):
     logger = structlog.get_logger()
 
     # Initialize provider service (singleton on app.state)
-    from app.services.provider import ProviderService
+    from answerstack.provider import ProviderService
 
     provider_service = ProviderService()
     app.state.provider_service = provider_service
@@ -80,7 +88,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Failed to initialize provider at startup", error=str(e))
 
     # Initialize ChromaDB vector repository
-    from app.repositories.vector import ChromaDBVectorRepository
+    from answerstack.vector import ChromaDBVectorRepository
 
     chromadb_path = "data/chromadb"
     Path(chromadb_path).mkdir(parents=True, exist_ok=True)
@@ -89,7 +97,7 @@ async def lifespan(app: FastAPI):
     logger.info("ChromaDB vector repository initialized", path=chromadb_path)
 
     # Initialize embedding service (uses provider_service singleton)
-    from app.services.embedding import OpenAIEmbeddingService
+    from answerstack.embedding import OpenAIEmbeddingService
 
     embedding_service = OpenAIEmbeddingService(provider_service)
     app.state.embedding_service = embedding_service
@@ -204,6 +212,7 @@ def create_app() -> FastAPI:
 
     # Exception handlers
     app.add_exception_handler(AppError, app_error_handler)
+    app.add_exception_handler(core_errors.AnswerStackError, core_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
 

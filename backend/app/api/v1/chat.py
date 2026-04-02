@@ -22,7 +22,7 @@ from app.schemas.chat import (
     ChatSessionResponse,
 )
 from app.services.chat import ChatService
-from app.services.retrieval import RetrievalService
+from answerstack.retrieval import RetrievalService
 
 logger = structlog.get_logger()
 
@@ -222,7 +222,7 @@ async def stream_chat(
                         vector_repo, embedding_service, ranker
                     )
                     chunks = await retrieval_service.retrieve(
-                        project_id=project_id,
+                        collection_name=f"project_{project_id}",
                         query=body.question,
                         embedding_model=settings.embedding_model,
                         top_k=settings.top_k,

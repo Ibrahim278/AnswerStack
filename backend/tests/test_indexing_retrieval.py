@@ -51,9 +51,7 @@ async def test_retrieval_integrity_after_incremental_rebuild(
     assert build_resp.status_code == 202
     await _wait_for_index_status(client, project_id, "indexed")
 
-    from uuid import UUID
-
-    from app.services.retrieval import RetrievalService
+    from answerstack.retrieval import RetrievalService
 
     retrieval = RetrievalService(
         mock_vector_repo,
@@ -61,7 +59,7 @@ async def test_retrieval_integrity_after_incremental_rebuild(
         ranker=None,
     )
     results = await retrieval.retrieve(
-        UUID(project_id),
+        f"project_{project_id}",
         query="gamma",
         embedding_model="text-embedding-test",
         reranker_enabled=False,
@@ -97,9 +95,7 @@ async def test_retrieval_integrity_after_indexed_document_delete(
     delete_resp = await client.delete(f"/api/v1/projects/{project_id}/documents/{victim['id']}")
     assert delete_resp.status_code == 204
 
-    from uuid import UUID
-
-    from app.services.retrieval import RetrievalService
+    from answerstack.retrieval import RetrievalService
 
     retrieval = RetrievalService(
         mock_vector_repo,
@@ -107,7 +103,7 @@ async def test_retrieval_integrity_after_indexed_document_delete(
         ranker=None,
     )
     results = await retrieval.retrieve(
-        UUID(project_id),
+        f"project_{project_id}",
         query="beta",
         embedding_model="text-embedding-test",
         reranker_enabled=False,
@@ -144,7 +140,7 @@ async def test_indexed_document_delete_restores_exact_vector_chunk_parity(
 
     remaining_chunk_ids = await _get_project_chunk_ids(client, project_id)
     assert remaining_chunk_ids
-    assert set(vector_store[project_id].keys()) == remaining_chunk_ids
+    assert set(vector_store[f"project_{project_id}"].keys()) == remaining_chunk_ids
 
 
 async def test_retrieval_integrity_after_settings_change_full_rebuild(
@@ -167,7 +163,7 @@ async def test_retrieval_integrity_after_settings_change_full_rebuild(
     )
     await _build_project_index(client, project_id)
 
-    before_chunk_ids = set(vector_store[project_id].keys())
+    before_chunk_ids = set(vector_store[f"project_{project_id}"].keys())
     assert before_chunk_ids
 
     settings_resp = await client.put("/api/v1/settings", json={"chunk_size": 100})
@@ -182,13 +178,11 @@ async def test_retrieval_integrity_after_settings_change_full_rebuild(
     assert build_resp.status_code == 202
     await _wait_for_index_status(client, project_id, "indexed")
 
-    after_chunk_ids = set(vector_store[project_id].keys())
+    after_chunk_ids = set(vector_store[f"project_{project_id}"].keys())
     assert after_chunk_ids
     assert before_chunk_ids.isdisjoint(after_chunk_ids)
 
-    from uuid import UUID
-
-    from app.services.retrieval import RetrievalService
+    from answerstack.retrieval import RetrievalService
 
     retrieval = RetrievalService(
         mock_vector_repo,
@@ -196,7 +190,7 @@ async def test_retrieval_integrity_after_settings_change_full_rebuild(
         ranker=None,
     )
     results = await retrieval.retrieve(
-        UUID(project_id),
+        f"project_{project_id}",
         query="alpha",
         embedding_model="text-embedding-test",
         reranker_enabled=False,
@@ -226,7 +220,7 @@ async def test_retrieval_integrity_after_rechunk_reparse_rebuild_has_no_duplicat
     )
     await _build_project_index(client, project_id)
 
-    initial_chunk_ids = set(vector_store[project_id].keys())
+    initial_chunk_ids = set(vector_store[f"project_{project_id}"].keys())
     assert len(initial_chunk_ids) > 1
 
     settings_resp = await client.put("/api/v1/settings", json={"chunk_size": 600})
@@ -240,7 +234,7 @@ async def test_retrieval_integrity_after_rechunk_reparse_rebuild_has_no_duplicat
     build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
     assert build_resp.status_code == 202
     await _wait_for_index_status(client, project_id, "indexed")
-    middle_chunk_ids = set(vector_store[project_id].keys())
+    middle_chunk_ids = set(vector_store[f"project_{project_id}"].keys())
     assert middle_chunk_ids
     assert initial_chunk_ids.isdisjoint(middle_chunk_ids)
 
@@ -258,7 +252,7 @@ async def test_retrieval_integrity_after_rechunk_reparse_rebuild_has_no_duplicat
     build_resp = await client.post(f"/api/v1/projects/{project_id}/indexing/build")
     assert build_resp.status_code == 202
     await _wait_for_index_status(client, project_id, "indexed")
-    final_chunk_ids = set(vector_store[project_id].keys())
+    final_chunk_ids = set(vector_store[f"project_{project_id}"].keys())
     assert final_chunk_ids
     assert initial_chunk_ids.isdisjoint(final_chunk_ids)
     assert middle_chunk_ids.isdisjoint(final_chunk_ids)
@@ -268,7 +262,7 @@ async def test_retrieval_integrity_after_rechunk_reparse_rebuild_has_no_duplicat
     from sqlalchemy import select
 
     from app.models.document import Chunk, Document
-    from app.services.retrieval import RetrievalService
+    from answerstack.retrieval import RetrievalService
 
     async with client._transport.app.state.session_factory() as session:  # type: ignore[union-attr]
         db_chunk_ids = {
@@ -288,7 +282,7 @@ async def test_retrieval_integrity_after_rechunk_reparse_rebuild_has_no_duplicat
         ranker=None,
     )
     results = await retrieval.retrieve(
-        UUID(project_id),
+        f"project_{project_id}",
         query="gamma",
         embedding_model="text-embedding-test",
         top_k=len(final_chunk_ids),

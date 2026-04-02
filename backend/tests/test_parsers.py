@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from app.parsers import DocumentParser, ParseResult, get_parser_for_extension
-from app.parsers.markdown_parser import MarkdownParser
-from app.parsers.text_parser import TextParser
+from answerstack.parsers import DocumentParser, ParseResult, get_parser_for_extension
+from answerstack.parsers.markdown import MarkdownParser
+from answerstack.parsers.text import TextParser
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -77,7 +77,7 @@ class TestGetParserForExtension:
         assert isinstance(parser, MarkdownParser)
 
     def test_get_parser_for_extension_pdf(self):
-        from app.parsers.pdf_parser import PdfParser
+        from answerstack.parsers.pdf import PdfParser
 
         parser = get_parser_for_extension(".pdf")
         assert isinstance(parser, PdfParser)
@@ -94,7 +94,7 @@ class TestGetParserForExtension:
 class TestPdfParser:
     def test_pdf_parser_import(self):
         """Verify PdfParser can be imported and instantiated."""
-        from app.parsers.pdf_parser import PdfParser
+        from answerstack.parsers.pdf import PdfParser
 
         parser = PdfParser()
         assert isinstance(parser, DocumentParser)
@@ -107,7 +107,7 @@ class TestPdfParser:
         except ImportError:
             pytest.skip("pymupdf not available")
 
-        from app.parsers.pdf_parser import PdfParser
+        from answerstack.parsers.pdf import PdfParser
 
         # Create a minimal PDF in memory
         doc = pymupdf.open()
@@ -124,7 +124,7 @@ class TestPdfParser:
 
     def test_pdf_parser_invalid_content(self):
         """Test that PdfParser raises ValueError for invalid content."""
-        from app.parsers.pdf_parser import PdfParser
+        from answerstack.parsers.pdf import PdfParser
 
         parser = PdfParser()
         with pytest.raises(ValueError, match="Failed to parse PDF"):

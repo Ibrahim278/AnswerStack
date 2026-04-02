@@ -1,4 +1,4 @@
-from app.chunking.splitter import RecursiveTextSplitter
+from answerstack.chunking.splitter import RecursiveTextSplitter
 
 
 class TestRecursiveTextSplitter:

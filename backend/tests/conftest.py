@@ -161,7 +161,7 @@ async def async_client_with_provider(async_engine, mock_openai_client) -> AsyncG
         app.state.settings = get_settings()
 
         # Configure provider service with mock client
-        from app.services.provider import ProviderService
+        from answerstack.provider import ProviderService
 
         provider_service = ProviderService()
         provider_service._client = mock_openai_client
@@ -275,7 +275,7 @@ async def async_client_with_indexing(
         app.state.settings = get_settings()
 
         # Configure provider service with mock client
-        from app.services.provider import ProviderService
+        from answerstack.provider import ProviderService
 
         provider_service = ProviderService()
         provider_service._client = mock_openai_client
@@ -336,7 +336,7 @@ async def async_client_with_chat(
         app.state.settings = get_settings()
 
         # Configure provider service with mock client
-        from app.services.provider import ProviderService
+        from answerstack.provider import ProviderService
 
         provider_service = ProviderService()
         provider_service._client = mock_openai_client
