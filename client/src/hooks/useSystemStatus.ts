@@ -43,7 +43,7 @@ export function useSystemStatus(projectId?: string, options?: UseSystemStatusOpt
     if (queryResult.isSuccess) {
       consecutiveFailures.current = 0;
     }
-  }, [queryResult.isError, queryResult.isSuccess, queryResult.dataUpdatedAt, queryResult.errorUpdatedAt]);
+  }, [queryResult.isError, queryResult.isSuccess]);
 
   // Fire transition notifications on status changes
   useEffect(() => {

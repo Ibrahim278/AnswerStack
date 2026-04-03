@@ -41,14 +41,28 @@ export default function KnowledgePage() {
     queryKey: ['documents', projectId],
     queryFn: () => api.getDocuments(projectId),
     enabled: !!projectId,
-    refetchInterval: 3000,
+    refetchInterval: (query) => {
+      const docs = query.state.data as Document[] | undefined;
+      if (!docs) return false;
+      const hasProcessing = docs.some((d) =>
+        ['uploaded', 'parsing', 'indexing'].includes(d.status),
+      );
+      return hasProcessing ? 3000 : false;
+    },
   });
 
   const { data: jobs = [] } = useQuery({
     queryKey: ['indexJobs', projectId],
     queryFn: () => api.getIndexJobs(projectId),
     enabled: !!projectId,
-    refetchInterval: 2000,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!Array.isArray(data)) return false;
+      const hasActive = data.some(
+        (j: { status: string }) => j.status === 'running' || j.status === 'pending',
+      );
+      return hasActive ? 2000 : false;
+    },
   });
 
   const uploadMutation = useMutation({

@@ -1,17 +1,22 @@
 import { BookOpen } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
+import { useThrottledValue } from '@/hooks/useThrottledValue';
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import { StreamPhaseIndicator } from '@/components/chat/StreamPhaseIndicator';
 
 /**
  * Active streaming message: token accumulation + pulsing cursor + phase indicator.
- * Re-renders on each token via Zustand store subscription.
+ * Tokens are throttled at 100ms to avoid re-parsing markdown on every SSE token.
  */
 export function StreamingMessage() {
   const streamingMessageId = useChatStore((s) => s.streamingMessageId);
   const accumulatedTokens = useChatStore((s) => s.accumulatedTokens);
   const currentSources = useChatStore((s) => s.currentSources);
   const streamPhase = useChatStore((s) => s.streamPhase);
+
+  // Throttle the content fed to MarkdownRenderer so the expensive
+  // markdown parse + rehype transform runs at most 10x/sec, not per token.
+  const throttledTokens = useThrottledValue(accumulatedTokens, 100);
 
   if (!streamingMessageId) return null;
 
@@ -27,7 +32,7 @@ export function StreamingMessage() {
         <div className="flex justify-start">
           <div className="max-w-[85%] rounded-xl px-4 py-3 bg-card border border-border">
             <MarkdownRenderer
-              content={accumulatedTokens}
+              content={throttledTokens}
               messageId={streamingMessageId}
             />
 

@@ -5,6 +5,7 @@ import {
   Loader2, AlertCircle, ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useShallow } from 'zustand/react/shallow';
 import { useProject } from '@/hooks/useProjects';
 import { useSessionList, useDeleteSession, useSessionDetail } from '@/hooks/useSessions';
 import { useChat } from '@/hooks/useChat';
@@ -41,14 +42,20 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const previousRouteSessionIdRef = useRef(routeSessionId);
 
-  const speechCapabilities = useChatStore((s) => s.speechCapabilities);
-  const microphonePermission = useChatStore((s) => s.microphonePermission);
-  const speechRecognitionState = useChatStore((s) => s.speechRecognitionState);
-  const speechPlaybackState = useChatStore((s) => s.speechPlaybackState);
-  const speechError = useChatStore((s) => s.speechError);
-  const speechCommittedPrefix = useChatStore((s) => s.speechCommittedPrefix);
-  const activePlaybackMessageId = useChatStore((s) => s.activePlaybackMessageId);
-  const setSpeechCapabilities = useChatStore((s) => s.setSpeechCapabilities);
+  const {
+    speechCapabilities, microphonePermission, speechRecognitionState,
+    speechPlaybackState, speechError, speechCommittedPrefix,
+    activePlaybackMessageId, setSpeechCapabilities,
+  } = useChatStore(useShallow((s) => ({
+    speechCapabilities: s.speechCapabilities,
+    microphonePermission: s.microphonePermission,
+    speechRecognitionState: s.speechRecognitionState,
+    speechPlaybackState: s.speechPlaybackState,
+    speechError: s.speechError,
+    speechCommittedPrefix: s.speechCommittedPrefix,
+    activePlaybackMessageId: s.activePlaybackMessageId,
+    setSpeechCapabilities: s.setSpeechCapabilities,
+  })));
 
   const isSpeechArming = speechRecognitionState === 'arming';
   const isSpeechListening = speechRecognitionState === 'listening';
@@ -70,10 +77,13 @@ export default function ChatPage() {
     onSessionCreated: handleSessionCreated,
   });
 
-  const accumulatedTokens = useChatStore((s) => s.accumulatedTokens);
-  const streamError = useChatStore((s) => s.streamError);
-  const sourcePanelOpen = useChatStore((s) => s.sourcePanelOpen);
-  const closeSourcePanel = useChatStore((s) => s.closeSourcePanel);
+  const { streamError, sourcePanelOpen, closeSourcePanel } = useChatStore(
+    useShallow((s) => ({
+      streamError: s.streamError,
+      sourcePanelOpen: s.sourcePanelOpen,
+      closeSourcePanel: s.closeSourcePanel,
+    })),
+  );
 
   const speechRecognition = useSpeechRecognition({
     value: input,
@@ -149,9 +159,19 @@ export default function ChatPage() {
     }
   }, [routeSessionId, sourcePanelOpen, closeSourcePanel]);
 
+  // Scroll on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, accumulatedTokens]);
+  }, [messages]);
+
+  // Auto-scroll during streaming (interval-based instead of per-token)
+  useEffect(() => {
+    if (!isStreaming) return;
+    const id = setInterval(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 200);
+    return () => clearInterval(id);
+  }, [isStreaming]);
 
   useEffect(() => {
     let cancelled = false;

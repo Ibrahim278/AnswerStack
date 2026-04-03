@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,14 +10,19 @@ interface ConnectionOverlayProps {
 
 export function ConnectionOverlay({ visible, onRetry }: ConnectionOverlayProps) {
   const [countdown, setCountdown] = useState(10);
+  const backoffRef = useRef(10);
 
   const handleRetry = useCallback(() => {
-    setCountdown(10);
     onRetry();
+    // Exponential backoff: 10 → 20 → 40 → 60 (cap)
+    backoffRef.current = Math.min(backoffRef.current * 2, 60);
+    setCountdown(backoffRef.current);
   }, [onRetry]);
 
   useEffect(() => {
     if (!visible) {
+      // Reset backoff on recovery
+      backoffRef.current = 10;
       setCountdown(10);
       return;
     }
@@ -26,7 +31,7 @@ export function ConnectionOverlay({ visible, onRetry }: ConnectionOverlayProps) 
       setCountdown((prev) => {
         if (prev <= 1) {
           handleRetry();
-          return 10;
+          return backoffRef.current;
         }
         return prev - 1;
       });

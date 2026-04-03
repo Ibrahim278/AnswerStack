@@ -32,18 +32,10 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
   const lastEventTimeRef = useRef<number>(Date.now());
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const {
-    startStream,
-    setStreamPhase,
-    appendToken,
-    setSources,
-    completeStream,
-    stopStream,
-    setStreamError,
-    prepareStream,
-    resetStream,
-    isStreaming,
-  } = useChatStore();
+  // Subscribe only to isStreaming — actions are accessed via getState() in
+  // callbacks so that token-level store updates don't re-render this hook's
+  // consumer (ChatPage).
+  const isStreaming = useChatStore((s) => s.isStreaming);
 
   const sseFn = fetchFn ?? fetchEventSource;
 
@@ -138,7 +130,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
       // preventing the UI from flickering back to empty state (ChatEmptyState)
       // before the first SSE event arrives. This avoids "Maximum update depth
       // exceeded" crashes from rapid mount/unmount cycles.
-      prepareStream();
+      useChatStore.getState().prepareStream();
 
       try {
         await sseFn(`/api/v1/projects/${projectId}/chat/stream`, {
@@ -167,6 +159,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
 
           onmessage(event) {
             lastEventTimeRef.current = Date.now();
+            const store = useChatStore.getState();
 
             switch (event.event) {
               case 'message_start': {
@@ -175,7 +168,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
                 sessionIdRef.current = data.session_id;
                 // Update user message session_id now that we know it
                 userMessage.session_id = data.session_id;
-                startStream(data.message_id);
+                store.startStream(data.message_id);
                 // Notify parent of new session (D-69: for router.replace)
                 if (!sessionId && onSessionCreated) {
                   onSessionCreated(data.session_id);
@@ -184,18 +177,18 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
               }
               case 'retrieval_start': {
                 // D-88: signal-only event
-                setStreamPhase('searching');
+                store.setStreamPhase('searching');
                 break;
               }
               case 'sources': {
                 const sources: SSESourceItem[] = JSON.parse(event.data);
-                setSources(sources);
-                setStreamPhase('generating');
+                store.setSources(sources);
+                store.setStreamPhase('generating');
                 break;
               }
               case 'token': {
                 // Token data is raw string, not JSON (per backend implementation)
-                appendToken(event.data);
+                store.appendToken(event.data);
                 break;
               }
               case 'message_complete': {
@@ -203,9 +196,9 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
                 // Update sources to only cited ones (backend filters after LLM response)
                 const citedSources: SSESourceItem[] = completeData.sources ?? [];
                 if (citedSources.length > 0 || completeData.sources !== undefined) {
-                  setSources(citedSources);
+                  store.setSources(citedSources);
                 }
-                completeStream();
+                store.completeStream();
 
                 // Optimistic cache update (D-66)
                 const currentSessionId = sessionIdRef.current;
@@ -225,7 +218,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
               }
               case 'error': {
                 const errorData: SSEError = JSON.parse(event.data);
-                setStreamError(errorData);
+                useChatStore.getState().setStreamError(errorData);
                 break;
               }
               case 'done': {
@@ -242,7 +235,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
               stopHeartbeatMonitor();
               // If we were streaming, save partial state
               if (useChatStore.getState().isStreaming) {
-                setStreamError({
+                useChatStore.getState().setStreamError({
                   code: 'connection.lost',
                   message: 'Connection lost. Partial answer saved.',
                 });
@@ -264,22 +257,22 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
         // Only set error if not already set by onerror handler
         const state = useChatStore.getState();
         if (state.streamPhase !== 'error') {
-          setStreamError({
+          state.setStreamError({
             code: 'connection.error',
             message: 'Failed to connect to the server. Please try again.',
           });
         }
       }
     },
-    [projectId, sseFn, startStream, setStreamPhase, appendToken, setSources, completeStream, setStreamError, prepareStream, onSessionCreated, updateSessionCache, startHeartbeatMonitor, stopHeartbeatMonitor],
+    [projectId, sseFn, onSessionCreated, updateSessionCache, startHeartbeatMonitor, stopHeartbeatMonitor],
   );
 
   // Stop generation (CHAT-05, D-49, D-60)
   const stop = useCallback(() => {
     abortControllerRef.current?.abort();
     stopHeartbeatMonitor();
-    stopStream();
-  }, [stopStream, stopHeartbeatMonitor]);
+    useChatStore.getState().stopStream();
+  }, [stopHeartbeatMonitor]);
 
   // Retry last message (CHAT-06, D-53)
   // Messages live in TanStack Query (not the Zustand store), so we look them
@@ -320,8 +313,8 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
   const abort = useCallback(() => {
     abortControllerRef.current?.abort();
     stopHeartbeatMonitor();
-    resetStream();
-  }, [resetStream, stopHeartbeatMonitor]);
+    useChatStore.getState().resetStream();
+  }, [stopHeartbeatMonitor]);
 
   // Cleanup on unmount: abort any active stream and clear heartbeat timer
   useEffect(() => {

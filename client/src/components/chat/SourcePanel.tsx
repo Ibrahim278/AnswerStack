@@ -56,6 +56,12 @@ export function SourcePanel({ messages }: SourcePanelProps) {
     }, 3000);
   }, []);
 
+  // Keep changing values in refs so the global listener stays stable
+  const activeSourceMsgIdRef = useRef(activeSourceMsgId);
+  activeSourceMsgIdRef.current = activeSourceMsgId;
+  const sourcePanelOpenRef = useRef(sourcePanelOpen);
+  sourcePanelOpenRef.current = sourcePanelOpen;
+
   // Listen for citation-click events to scroll to card
   useEffect(() => {
     const handler = (e: Event) => {
@@ -66,7 +72,7 @@ export function SourcePanel({ messages }: SourcePanelProps) {
       if (typeof sourceNumber === 'number' && typeof messageId === 'string') {
         pendingCitationRef.current = { messageId, sourceNumber };
 
-        if (sourcePanelOpen && activeSourceMsgId === messageId) {
+        if (sourcePanelOpenRef.current && activeSourceMsgIdRef.current === messageId) {
           scrollToSource(sourceNumber);
           pendingCitationRef.current = null;
         }
@@ -74,7 +80,7 @@ export function SourcePanel({ messages }: SourcePanelProps) {
     };
     window.addEventListener('citation-click', handler);
     return () => window.removeEventListener('citation-click', handler);
-  }, [activeSourceMsgId, scrollToSource, sourcePanelOpen]);
+  }, [scrollToSource]);
 
   useEffect(() => {
     const pendingCitation = pendingCitationRef.current;
