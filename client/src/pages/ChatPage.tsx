@@ -12,6 +12,7 @@ import { useChat } from '@/hooks/useChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
 import { useSuggestedPrompts } from '@/hooks/useSuggestedPrompts';
+import { useIndexingStatus } from '@/hooks/useIndexing';
 import { detectSpeechCapabilities } from '@/lib/speech';
 import { useChatStore } from '@/stores/chatStore';
 import { isValidUuid } from '@/utils/isValidUuid';
@@ -258,6 +259,8 @@ export default function ChatPage() {
   );
 
   const { prompts: suggestedPrompts } = useSuggestedPrompts(projectId);
+  // Mount indexing status so prompt cache invalidation fires when indexing completes
+  useIndexingStatus(projectId);
 
   // Invalid project ID
   if (!projectId) {
