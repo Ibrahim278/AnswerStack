@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
     Path(settings.chromadb_path).mkdir(parents=True, exist_ok=True)
     vector_repo = ChromaDBVectorRepository(path=settings.chromadb_path)
     app.state.vector_repo = vector_repo
-    logger.info("ChromaDB vector repository initialized", path=chromadb_path)
+    logger.info("ChromaDB vector repository initialized", path=settings.chromadb_path)
 
     # Initialize embedding service (uses provider_service singleton)
     from answerstack.embedding import OpenAIEmbeddingService
