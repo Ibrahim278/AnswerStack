@@ -3,6 +3,7 @@
 from answerstack.config import RAGConfig
 from answerstack.errors import AnswerStackError, EmbeddingError, ParsingError, ProviderError, VectorStoreError
 from answerstack.knowledge_base import KnowledgeBase
+from answerstack.prompts import build_followup_prompt, build_rag_prompt
 from answerstack.rag_pipeline import RAGPipeline
 from answerstack.types import CompleteEvent, ErrorEvent, RerankerProtocol, SourcesEvent, TokenEvent
 
@@ -20,4 +21,6 @@ __all__ = [
     "SourcesEvent",
     "CompleteEvent",
     "ErrorEvent",
+    "build_rag_prompt",
+    "build_followup_prompt",
 ]
