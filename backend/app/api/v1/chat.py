@@ -22,6 +22,7 @@ from app.schemas.chat import (
     ChatSessionResponse,
 )
 from app.services.chat import ChatService
+from answerstack.prompts import build_followup_prompt, build_rag_prompt
 from answerstack.retrieval import RetrievalService
 
 logger = structlog.get_logger()
@@ -279,32 +280,15 @@ async def stream_chat(
                     yield {"event": "done", "id": str(event_seq), "data": ""}
                     return
 
-                # Build system prompt with source context
+                # Build system prompt with source context (hardened)
                 source_context = RetrievalService.build_source_context(chunks)
                 if source_context:
-                    system_prompt = (
-                        settings.system_prompt
-                        + "\n\n"
-                        "INSTRUCTIONS:\n"
-                        "- ONLY answer using information from the CONTEXT section below. "
-                        "NEVER use your training data or prior knowledge.\n"
-                        "- Every factual claim MUST include a citation like [Source 1], [Source 2].\n"
-                        "- If the context does not contain enough information to answer, "
-                        "say exactly: \"I don't have enough information in the provided sources "
-                        "to answer this question.\" Do NOT attempt to answer from memory.\n"
-                        "- Be concise and accurate.\n\n"
-                        "CONTEXT:\n" + source_context
+                    system_prompt = build_rag_prompt(
+                        settings.system_prompt, source_context
                     )
                 else:
                     # Follow-up with no new retrieval -- rely on conversation history
-                    system_prompt = (
-                        settings.system_prompt
-                        + "\n\n"
-                        "INSTRUCTIONS:\n"
-                        "- Answer based on the conversation history above.\n"
-                        "- If you previously cited sources, you may reference them.\n"
-                        "- Be concise and accurate.\n"
-                    )
+                    system_prompt = build_followup_prompt(settings.system_prompt)
 
                 # Build messages array with conversation history
                 messages = [{"role": "system", "content": system_prompt}]
