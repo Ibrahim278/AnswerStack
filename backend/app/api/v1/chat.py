@@ -335,12 +335,15 @@ async def stream_chat(
 
                 # Stream LLM response
                 client = provider_service._client
-                stream = await client.chat.completions.create(
-                    model=settings.provider_model,
-                    messages=messages,
-                    temperature=settings.temperature,
-                    stream=True,
-                )
+                create_kwargs: dict = {
+                    "model": settings.provider_model,
+                    "messages": messages,
+                    "temperature": settings.temperature,
+                    "stream": True,
+                }
+                if settings.reasoning_effort:
+                    create_kwargs["reasoning_effort"] = settings.reasoning_effort
+                stream = await client.chat.completions.create(**create_kwargs)
 
                 full_response = ""
                 token_count = 0

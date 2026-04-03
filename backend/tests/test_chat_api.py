@@ -490,3 +490,146 @@ class TestSSEStreaming:
         event_types = [e.get("event") for e in events if "event" in e]
         assert "message_start" in event_types
         assert "done" in event_types
+
+
+# ---------------------------------------------------------------------------
+# Reasoning effort in LLM calls
+# ---------------------------------------------------------------------------
+
+
+class TestReasoningEffort:
+    """Tests for reasoning_effort parameter being passed to the LLM."""
+
+    async def test_reasoning_effort_passed_when_set(self, async_client_with_chat, mock_openai_client):
+        """When reasoning_effort is configured, it is forwarded to client.chat.completions.create."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        # Configure settings with reasoning_effort
+        await client.put(
+            "/api/v1/settings",
+            json={
+                "embedding_model": "text-embedding-test",
+                "provider_model": "test-model",
+                "reasoning_effort": "high",
+            },
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "What is the capital of France?"},
+        )
+        assert resp.status_code == 200
+
+        # Verify the mock was called with reasoning_effort
+        call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs.get("reasoning_effort") == "high"
+
+    async def test_reasoning_effort_omitted_when_empty(self, async_client_with_chat, mock_openai_client):
+        """When reasoning_effort is empty (default), it is NOT passed to the LLM call."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        # Configure settings WITHOUT reasoning_effort (default empty string)
+        await client.put(
+            "/api/v1/settings",
+            json={
+                "embedding_model": "text-embedding-test",
+                "provider_model": "test-model",
+            },
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "What is the capital of France?"},
+        )
+        assert resp.status_code == 200
+
+        # Verify reasoning_effort was NOT included in the call
+        call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+        assert "reasoning_effort" not in call_kwargs
+
+    async def test_reasoning_effort_low_value(self, async_client_with_chat, mock_openai_client):
+        """reasoning_effort='low' is correctly forwarded to the LLM."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        await client.put(
+            "/api/v1/settings",
+            json={
+                "embedding_model": "text-embedding-test",
+                "provider_model": "test-model",
+                "reasoning_effort": "low",
+            },
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Test?"},
+        )
+        assert resp.status_code == 200
+
+        call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs.get("reasoning_effort") == "low"
+
+    async def test_reasoning_effort_medium_value(self, async_client_with_chat, mock_openai_client):
+        """reasoning_effort='medium' is correctly forwarded to the LLM."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        await client.put(
+            "/api/v1/settings",
+            json={
+                "embedding_model": "text-embedding-test",
+                "provider_model": "test-model",
+                "reasoning_effort": "medium",
+            },
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Test?"},
+        )
+        assert resp.status_code == 200
+
+        call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs.get("reasoning_effort") == "medium"
+
+    async def test_clearing_reasoning_effort_removes_from_llm_call(self, async_client_with_chat, mock_openai_client):
+        """Setting reasoning_effort then clearing it removes it from LLM calls."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        # Set reasoning_effort first
+        await client.put(
+            "/api/v1/settings",
+            json={
+                "embedding_model": "text-embedding-test",
+                "provider_model": "test-model",
+                "reasoning_effort": "high",
+            },
+        )
+
+        # Send a message with reasoning_effort set
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "First question"},
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs.get("reasoning_effort") == "high"
+
+        # Clear reasoning_effort
+        await client.put(
+            "/api/v1/settings",
+            json={"reasoning_effort": ""},
+        )
+
+        # Send another message - reasoning_effort should NOT be present
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Second question"},
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+        assert "reasoning_effort" not in call_kwargs
