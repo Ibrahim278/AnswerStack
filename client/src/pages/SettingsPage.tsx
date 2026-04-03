@@ -14,6 +14,7 @@ type LocalSettings = {
   embedding_model: string;
   temperature: number;
   system_prompt: string;
+  reasoning_effort: string;
   chunk_size: number;
   chunk_overlap: number;
   top_k: number;
@@ -30,6 +31,7 @@ const defaultLocal: LocalSettings = {
   embedding_model: '',
   temperature: 0.7,
   system_prompt: '',
+  reasoning_effort: 'none',
   chunk_size: 2200,
   chunk_overlap: 250,
   top_k: 5,
@@ -47,6 +49,7 @@ function settingsToLocal(s: SettingsResponse): LocalSettings {
     embedding_model: s.embedding_model,
     temperature: s.temperature,
     system_prompt: s.system_prompt,
+    reasoning_effort: s.reasoning_effort,
     chunk_size: s.chunk_size,
     chunk_overlap: s.chunk_overlap,
     top_k: s.top_k,

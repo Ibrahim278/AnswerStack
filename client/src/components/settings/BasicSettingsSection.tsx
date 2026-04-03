@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ConnectionTestResult } from '@/types';
 
@@ -19,6 +20,7 @@ interface BasicSettingsSectionProps {
     embedding_model: string;
     temperature: number;
     system_prompt: string;
+    reasoning_effort: string;
   };
   update: (key: string, value: unknown) => void;
 }
@@ -156,6 +158,28 @@ export function BasicSettingsSection({ localConfig, update }: BasicSettingsSecti
               max={2}
               step={0.05}
             />
+          </div>
+          <div>
+            <Label className="text-xs">Reasoning Effort</Label>
+            <Select
+              value={localConfig.reasoning_effort || 'none'}
+              onValueChange={(v) => update('reasoning_effort', v)}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (disabled)</SelectItem>
+                <SelectItem value="minimal">Minimal</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="xhigh">Extra High</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Controls extended thinking for reasoning models. &quot;None&quot; is recommended for RAG.
+            </p>
           </div>
           <div>
             <Label className="text-xs">System Prompt</Label>
