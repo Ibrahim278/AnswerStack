@@ -498,10 +498,10 @@ class TestSSEStreaming:
 
 
 class TestReasoningEffort:
-    """Tests for reasoning_effort parameter being passed to the LLM via extra_body."""
+    """Tests for reasoning_effort parameter being passed to the LLM."""
 
     async def test_reasoning_effort_passed_when_set(self, async_client_with_chat, mock_openai_client):
-        """When reasoning_effort is configured, it is forwarded via extra_body."""
+        """When reasoning_effort is configured, it is forwarded as top-level kwarg."""
         client = async_client_with_chat
         project_id = await create_project(client)
 
@@ -521,10 +521,10 @@ class TestReasoningEffort:
         assert resp.status_code == 200
 
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["extra_body"] == {"reasoning": {"effort": "high"}}
+        assert call_kwargs["reasoning_effort"] == "high"
 
     async def test_reasoning_effort_omitted_when_empty(self, async_client_with_chat, mock_openai_client):
-        """When reasoning_effort is empty (default), extra_body is NOT passed."""
+        """When reasoning_effort is empty (default), reasoning_effort is NOT passed."""
         client = async_client_with_chat
         project_id = await create_project(client)
 
@@ -543,7 +543,7 @@ class TestReasoningEffort:
         assert resp.status_code == 200
 
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
-        assert "extra_body" not in call_kwargs
+        assert "reasoning_effort" not in call_kwargs
 
     async def test_reasoning_effort_none_disables_thinking(self, async_client_with_chat, mock_openai_client):
         """reasoning_effort='none' sends effort='none' to disable thinking."""
@@ -566,10 +566,10 @@ class TestReasoningEffort:
         assert resp.status_code == 200
 
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["extra_body"] == {"reasoning": {"effort": "none"}}
+        assert call_kwargs["reasoning_effort"] == "none"
 
     async def test_reasoning_effort_low_value(self, async_client_with_chat, mock_openai_client):
-        """reasoning_effort='low' is correctly forwarded via extra_body."""
+        """reasoning_effort='low' is correctly forwarded as top-level kwarg."""
         client = async_client_with_chat
         project_id = await create_project(client)
 
@@ -589,10 +589,10 @@ class TestReasoningEffort:
         assert resp.status_code == 200
 
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["extra_body"] == {"reasoning": {"effort": "low"}}
+        assert call_kwargs["reasoning_effort"] == "low"
 
     async def test_reasoning_effort_medium_value(self, async_client_with_chat, mock_openai_client):
-        """reasoning_effort='medium' is correctly forwarded via extra_body."""
+        """reasoning_effort='medium' is correctly forwarded as top-level kwarg."""
         client = async_client_with_chat
         project_id = await create_project(client)
 
@@ -612,10 +612,10 @@ class TestReasoningEffort:
         assert resp.status_code == 200
 
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["extra_body"] == {"reasoning": {"effort": "medium"}}
+        assert call_kwargs["reasoning_effort"] == "medium"
 
     async def test_clearing_reasoning_effort_removes_from_llm_call(self, async_client_with_chat, mock_openai_client):
-        """Setting reasoning_effort then clearing it removes extra_body from LLM calls."""
+        """Setting reasoning_effort then clearing it removes reasoning_effort from LLM calls."""
         client = async_client_with_chat
         project_id = await create_project(client)
 
@@ -634,7 +634,7 @@ class TestReasoningEffort:
         )
         assert resp.status_code == 200
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["extra_body"] == {"reasoning": {"effort": "high"}}
+        assert call_kwargs["reasoning_effort"] == "high"
 
         # Clear reasoning_effort
         await client.put(
@@ -648,7 +648,7 @@ class TestReasoningEffort:
         )
         assert resp.status_code == 200
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
-        assert "extra_body" not in call_kwargs
+        assert "reasoning_effort" not in call_kwargs
 
     async def test_max_completion_tokens_passed_when_set(self, async_client_with_chat, mock_openai_client):
         """max_completion_tokens is forwarded to the LLM call when configured."""

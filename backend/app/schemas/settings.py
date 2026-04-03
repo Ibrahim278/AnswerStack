@@ -59,7 +59,7 @@ class SettingsUpdate(BaseModel):
     def validate_reasoning_effort(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        allowed = {"", "none", "low", "medium", "high"}
+        allowed = {"", "none", "minimal", "low", "medium", "high", "xhigh"}
         if v not in allowed:
             raise ValueError(f"reasoning_effort must be one of: {', '.join(sorted(allowed - {''}))} (or empty for provider default)")
         return v
