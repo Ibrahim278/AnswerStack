@@ -1,12 +1,20 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Resolve .env paths relative to the project root, not the working directory.
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent  # backend/
+_PROJECT_ROOT = _BACKEND_DIR.parent
+_ENV_FILES = tuple(
+    str(p) for p in (_PROJECT_ROOT / ".env", _BACKEND_DIR / ".env") if p.exists()
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=("../.env", ".env"),
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         case_sensitive=False,
         populate_by_name=True,
