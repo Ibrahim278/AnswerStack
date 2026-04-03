@@ -106,3 +106,93 @@ class TestRAGConfig:
         r = repr(config)
         assert "provider_url" in r
         assert "data_dir" in r
+
+
+class TestRAGConfigFromEnv:
+    """Tests for RAGConfig.from_env() classmethod."""
+
+    def test_from_env_reads_env_vars(self, monkeypatch):
+        """from_env() reads PROVIDER_URL and DATA_DIR from environment."""
+        monkeypatch.setenv("PROVIDER_URL", "http://env-host:1234/v1")
+        monkeypatch.setenv("DATA_DIR", "/tmp/env-data")
+        config = RAGConfig.from_env()
+        assert config.provider_url == "http://env-host:1234/v1"
+        assert config.data_dir == "/tmp/env-data"
+
+    def test_from_env_reads_optional_fields(self, monkeypatch):
+        """from_env() reads optional fields like CHUNK_SIZE, TEMPERATURE."""
+        monkeypatch.setenv("PROVIDER_URL", "http://x/v1")
+        monkeypatch.setenv("DATA_DIR", "/tmp/d")
+        monkeypatch.setenv("CHUNK_SIZE", "500")
+        monkeypatch.setenv("TEMPERATURE", "0.1")
+        monkeypatch.setenv("TOP_K", "10")
+        monkeypatch.setenv("RERANKER_ENABLED", "true")
+        config = RAGConfig.from_env()
+        assert config.chunk_size == 500
+        assert config.temperature == 0.1
+        assert config.top_k == 10
+        assert config.reranker_enabled is True
+
+    def test_from_env_overrides_beat_env_vars(self, monkeypatch):
+        """Explicit overrides take priority over env vars."""
+        monkeypatch.setenv("PROVIDER_URL", "http://env/v1")
+        monkeypatch.setenv("DATA_DIR", "/tmp/env")
+        monkeypatch.setenv("CHUNK_SIZE", "500")
+        config = RAGConfig.from_env(chunk_size=999)
+        assert config.chunk_size == 999
+        assert config.provider_url == "http://env/v1"
+
+    def test_from_env_overrides_can_supply_required_fields(self):
+        """Required fields can come from overrides instead of env vars."""
+        config = RAGConfig.from_env(
+            provider_url="http://override/v1",
+            data_dir="/tmp/override",
+        )
+        assert config.provider_url == "http://override/v1"
+
+    def test_from_env_missing_required_raises(self, monkeypatch):
+        """from_env() raises ValueError when required fields are missing."""
+        monkeypatch.delenv("PROVIDER_URL", raising=False)
+        monkeypatch.delenv("DATA_DIR", raising=False)
+        with pytest.raises(ValueError, match="PROVIDER_URL"):
+            RAGConfig.from_env()
+
+    def test_from_env_missing_one_required_raises(self, monkeypatch):
+        """from_env() raises ValueError listing only the missing field."""
+        monkeypatch.setenv("PROVIDER_URL", "http://x/v1")
+        monkeypatch.delenv("DATA_DIR", raising=False)
+        with pytest.raises(ValueError, match="DATA_DIR"):
+            RAGConfig.from_env()
+
+    def test_from_env_empty_reasoning_effort_stays_none(self, monkeypatch):
+        """Empty REASONING_EFFORT env var doesn't set the field."""
+        monkeypatch.setenv("PROVIDER_URL", "http://x/v1")
+        monkeypatch.setenv("DATA_DIR", "/tmp/d")
+        monkeypatch.setenv("REASONING_EFFORT", "")
+        config = RAGConfig.from_env()
+        assert config.reasoning_effort is None
+
+    def test_from_env_reasoning_effort_set(self, monkeypatch):
+        """Non-empty REASONING_EFFORT is passed through."""
+        monkeypatch.setenv("PROVIDER_URL", "http://x/v1")
+        monkeypatch.setenv("DATA_DIR", "/tmp/d")
+        monkeypatch.setenv("REASONING_EFFORT", "none")
+        config = RAGConfig.from_env()
+        assert config.reasoning_effort == "none"
+
+    def test_from_env_invalid_int_ignored(self, monkeypatch):
+        """Non-numeric CHUNK_SIZE is silently ignored (uses default)."""
+        monkeypatch.setenv("PROVIDER_URL", "http://x/v1")
+        monkeypatch.setenv("DATA_DIR", "/tmp/d")
+        monkeypatch.setenv("CHUNK_SIZE", "not-a-number")
+        config = RAGConfig.from_env()
+        assert config.chunk_size == 2200
+
+    def test_from_env_reranker_false_values(self, monkeypatch):
+        """RERANKER_ENABLED=false/0/no all resolve to False."""
+        monkeypatch.setenv("PROVIDER_URL", "http://x/v1")
+        monkeypatch.setenv("DATA_DIR", "/tmp/d")
+        for val in ("false", "0", "no"):
+            monkeypatch.setenv("RERANKER_ENABLED", val)
+            config = RAGConfig.from_env()
+            assert config.reranker_enabled is False
