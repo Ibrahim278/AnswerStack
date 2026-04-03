@@ -42,10 +42,10 @@ class TestRAGConfig:
         assert config.initial_k == 20
         assert config.similarity_threshold == 0.3
         assert config.temperature == 0.7
-        assert config.reranker_enabled is True
+        assert config.reranker_enabled is False
         assert config.reasoning_effort is None
         assert config.max_completion_tokens is None
-        assert "helpful assistant" in config.system_prompt
+        assert "research assistant" in config.system_prompt
         assert "[Source N]" in config.system_prompt
 
     def test_custom_overrides(self):
