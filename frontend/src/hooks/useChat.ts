@@ -93,8 +93,11 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
           return { ...old, messages };
         },
       );
-      void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.detail(sessionId) });
-      // Invalidate session list to update title/timestamps (D-68)
+      // Invalidate session list to update title/timestamps (D-68).
+      // Session detail is NOT invalidated here — the optimistic update above
+      // already has the correct content. Immediate invalidation would refetch
+      // from the server where messages have different IDs (DB-generated vs
+      // SSE-generated), causing AnimatePresence to re-key and flash.
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list(projectId) });
     },
     [queryClient, projectId],
@@ -131,6 +134,23 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
       // before the first SSE event arrives. This avoids "Maximum update depth
       // exceeded" crashes from rapid mount/unmount cycles.
       useChatStore.getState().prepareStream();
+
+      // On retry, optimistically remove the old assistant message from the cache
+      // so it doesn't render alongside the new streaming response.
+      if (isRetry && sessionId) {
+        queryClient.setQueryData<ChatSessionDetailResponse>(
+          queryKeys.sessions.detail(sessionId),
+          (old) => {
+            if (!old) return old;
+            const messages = [...old.messages];
+            const lastAssistantIdx = messages.findLastIndex((m) => m.role === 'assistant');
+            if (lastAssistantIdx !== -1) {
+              messages.splice(lastAssistantIdx, 1);
+            }
+            return { ...old, messages };
+          },
+        );
+      }
 
       try {
         await sseFn(`/api/v1/projects/${projectId}/chat/stream`, {
@@ -198,9 +218,11 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
                 if (citedSources.length > 0 || completeData.sources !== undefined) {
                   store.setSources(citedSources);
                 }
-                store.completeStream();
 
-                // Optimistic cache update (D-66)
+                // Optimistic cache update (D-66) — must happen BEFORE
+                // completeStream() so the message is in the query cache
+                // when isStreaming flips to false, avoiding a flash where
+                // neither StreamingMessage nor the cached message renders.
                 const currentSessionId = sessionIdRef.current;
                 if (currentSessionId) {
                   const { accumulatedTokens } = useChatStore.getState();
@@ -214,6 +236,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
                   };
                   updateSessionCache(currentSessionId, userMessage, assistantMessage, isRetry);
                 }
+                store.completeStream();
                 break;
               }
               case 'error': {

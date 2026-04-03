@@ -79,11 +79,12 @@ export default function ChatPage() {
     onSessionCreated: handleSessionCreated,
   });
 
-  const { streamError, sourcePanelOpen, closeSourcePanel } = useChatStore(
+  const { streamError, sourcePanelOpen, closeSourcePanel, streamingMessageId } = useChatStore(
     useShallow((s) => ({
       streamError: s.streamError,
       sourcePanelOpen: s.sourcePanelOpen,
       closeSourcePanel: s.closeSourcePanel,
+      streamingMessageId: s.streamingMessageId,
     })),
   );
 
@@ -417,7 +418,7 @@ export default function ChatPage() {
                   {messages.map((msg, idx) => (
                     <motion.div
                       key={msg.id}
-                      initial={{ opacity: 0, y: 8 }}
+                      initial={msg.id === streamingMessageId ? false : { opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                     >
                       {msg.role === 'user' ? (

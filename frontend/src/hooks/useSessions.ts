@@ -56,7 +56,7 @@ export function useDeleteSession(projectId: string) {
     mutationFn: (sessionId: string) => chatApi.deleteSession(projectId, sessionId),
     onSuccess: (_data, sessionId) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list(projectId) });
-      queryClient.removeQueries({ queryKey: queryKeys.sessions.detail(sessionId) });
+      queryClient.setQueryData(queryKeys.sessions.detail(sessionId), undefined);
     },
   });
 }
