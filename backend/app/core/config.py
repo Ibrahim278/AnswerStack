@@ -31,11 +31,8 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 50
     document_storage_path: str = "data/documents"
 
-    # Provider defaults (overridden at runtime via DB settings table)
-    default_provider_url: str = "http://192.168.144.39:1234/v1"
-    default_provider_api_key: str = "sk-lm-aHharLT6:S8j7cVihb8pl99jesQk7"
-    default_provider_model: str = "zai-org/glm-4.7-flash"
-    default_embedding_model: str = "text-embedding-qwen3-embedding-4b@q8_0"
+    # ChromaDB
+    chromadb_path: str = "data/chromadb"
 
     # Speech providers
     elevenlabs_api_key: str = Field("", validation_alias=AliasChoices("ELEVEN_LABS_KEY", "ELEVENLABS_API_KEY"))

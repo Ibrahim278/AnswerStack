@@ -90,9 +90,8 @@ async def lifespan(app: FastAPI):
     # Initialize ChromaDB vector repository
     from answerstack.vector import ChromaDBVectorRepository
 
-    chromadb_path = "data/chromadb"
-    Path(chromadb_path).mkdir(parents=True, exist_ok=True)
-    vector_repo = ChromaDBVectorRepository(path=chromadb_path)
+    Path(settings.chromadb_path).mkdir(parents=True, exist_ok=True)
+    vector_repo = ChromaDBVectorRepository(path=settings.chromadb_path)
     app.state.vector_repo = vector_repo
     logger.info("ChromaDB vector repository initialized", path=chromadb_path)
 
