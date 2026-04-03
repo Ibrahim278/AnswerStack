@@ -11,6 +11,7 @@ import { useSessionList, useDeleteSession, useSessionDetail } from '@/hooks/useS
 import { useChat } from '@/hooks/useChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
+import { useSuggestedPrompts } from '@/hooks/useSuggestedPrompts';
 import { detectSpeechCapabilities } from '@/lib/speech';
 import { useChatStore } from '@/stores/chatStore';
 import { isValidUuid } from '@/utils/isValidUuid';
@@ -256,12 +257,7 @@ export default function ChatPage() {
     -1,
   );
 
-  const suggestedPrompts = [
-    'What are the key findings?',
-    'Summarize the main points',
-    'What are the trends?',
-    'Compare the data across documents',
-  ];
+  const { prompts: suggestedPrompts } = useSuggestedPrompts(projectId);
 
   // Invalid project ID
   if (!projectId) {

@@ -45,6 +45,13 @@ export function useIndexingStatus(projectId: string) {
       // Refresh related views whenever indexing transitions into or out of an active state.
       if (prev && isIndexingActive(prev) !== isIndexingActive(data)) {
         invalidateProjectViews(queryClient, projectId);
+
+        // When indexing just finished, fetch fresh suggested prompts
+        if (isIndexingActive(prev) && !isIndexingActive(data)) {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.suggestedPrompts(projectId),
+          });
+        }
       }
 
       return data;

@@ -51,7 +51,6 @@ class ChatApi {
   async getSuggestedPrompts(projectId: string): Promise<SuggestedPromptsResponse> {
     return apiFetch<SuggestedPromptsResponse>(
       `/projects/${projectId}/suggested-prompts`,
-      { method: 'POST' },
     );
   }
 }
