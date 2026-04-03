@@ -10,6 +10,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         populate_by_name=True,
+        extra="ignore",
     )
 
     # Application

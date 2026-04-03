@@ -54,6 +54,9 @@ class Settings(Base):
     reasoning_effort: Mapped[str] = mapped_column(
         String(20), default="", nullable=False, server_default=""
     )
+    max_completion_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
+    )
     tts_provider: Mapped[str] = mapped_column(
         String(50), default="", nullable=False, server_default=""
     )

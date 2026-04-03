@@ -171,7 +171,11 @@ class RAGPipeline:
                 "stream": True,
             }
             if self._config.reasoning_effort is not None:
-                create_kwargs["reasoning_effort"] = self._config.reasoning_effort
+                create_kwargs["extra_body"] = {
+                    "reasoning": {"effort": self._config.reasoning_effort}
+                }
+            if self._config.max_completion_tokens is not None:
+                create_kwargs["max_completion_tokens"] = self._config.max_completion_tokens
             stream = await client.chat.completions.create(**create_kwargs)
 
             full_response = ""

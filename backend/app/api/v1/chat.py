@@ -342,7 +342,11 @@ async def stream_chat(
                     "stream": True,
                 }
                 if settings.reasoning_effort:
-                    create_kwargs["reasoning_effort"] = settings.reasoning_effort
+                    create_kwargs["extra_body"] = {
+                        "reasoning": {"effort": settings.reasoning_effort}
+                    }
+                if settings.max_completion_tokens is not None:
+                    create_kwargs["max_completion_tokens"] = settings.max_completion_tokens
                 stream = await client.chat.completions.create(**create_kwargs)
 
                 full_response = ""

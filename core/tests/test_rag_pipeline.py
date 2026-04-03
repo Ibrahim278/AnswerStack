@@ -297,14 +297,14 @@ async def test_query_with_no_chunks_still_streams(sample_config):
 # --------------------------------------------------------------------------- #
 
 async def test_query_passes_reasoning_effort_when_set(sample_config):
-    """reasoning_effort is forwarded to the LLM create call when configured."""
+    """reasoning_effort is forwarded via extra_body when configured."""
     sample_config.reasoning_effort = "high"
     pipeline = _make_pipeline(sample_config)
 
-    events = await _collect_events(pipeline, query="test?")
+    await _collect_events(pipeline, query="test?")
 
     call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
-    assert call_kwargs["reasoning_effort"] == "high"
+    assert call_kwargs["extra_body"] == {"reasoning": {"effort": "high"}}
 
 
 async def test_query_omits_reasoning_effort_when_none(sample_config):
@@ -312,10 +312,21 @@ async def test_query_omits_reasoning_effort_when_none(sample_config):
     assert sample_config.reasoning_effort is None
     pipeline = _make_pipeline(sample_config)
 
-    events = await _collect_events(pipeline, query="test?")
+    await _collect_events(pipeline, query="test?")
 
     call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
-    assert "reasoning_effort" not in call_kwargs
+    assert "extra_body" not in call_kwargs
+
+
+async def test_query_reasoning_effort_none_disables_thinking(sample_config):
+    """reasoning_effort='none' sends effort='none' to disable thinking."""
+    sample_config.reasoning_effort = "none"
+    pipeline = _make_pipeline(sample_config)
+
+    await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["extra_body"] == {"reasoning": {"effort": "none"}}
 
 
 async def test_query_reasoning_effort_low(sample_config):
@@ -323,10 +334,10 @@ async def test_query_reasoning_effort_low(sample_config):
     sample_config.reasoning_effort = "low"
     pipeline = _make_pipeline(sample_config)
 
-    events = await _collect_events(pipeline, query="test?")
+    await _collect_events(pipeline, query="test?")
 
     call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
-    assert call_kwargs["reasoning_effort"] == "low"
+    assert call_kwargs["extra_body"] == {"reasoning": {"effort": "low"}}
 
 
 async def test_query_reasoning_effort_medium(sample_config):
@@ -334,10 +345,49 @@ async def test_query_reasoning_effort_medium(sample_config):
     sample_config.reasoning_effort = "medium"
     pipeline = _make_pipeline(sample_config)
 
-    events = await _collect_events(pipeline, query="test?")
+    await _collect_events(pipeline, query="test?")
 
     call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
-    assert call_kwargs["reasoning_effort"] == "medium"
+    assert call_kwargs["extra_body"] == {"reasoning": {"effort": "medium"}}
+
+
+# --------------------------------------------------------------------------- #
+# max_completion_tokens parameter tests
+# --------------------------------------------------------------------------- #
+
+async def test_query_passes_max_completion_tokens_when_set(sample_config):
+    """max_completion_tokens is forwarded to the LLM call when configured."""
+    sample_config.max_completion_tokens = 4096
+    pipeline = _make_pipeline(sample_config)
+
+    await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["max_completion_tokens"] == 4096
+
+
+async def test_query_omits_max_completion_tokens_when_none(sample_config):
+    """max_completion_tokens is NOT passed when it is None (default)."""
+    assert sample_config.max_completion_tokens is None
+    pipeline = _make_pipeline(sample_config)
+
+    await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert "max_completion_tokens" not in call_kwargs
+
+
+async def test_query_both_reasoning_and_max_tokens(sample_config):
+    """Both reasoning_effort and max_completion_tokens passed when both set."""
+    sample_config.reasoning_effort = "high"
+    sample_config.max_completion_tokens = 8192
+    pipeline = _make_pipeline(sample_config)
+
+    await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["extra_body"] == {"reasoning": {"effort": "high"}}
+    assert call_kwargs["max_completion_tokens"] == 8192
 
 
 # --------------------------------------------------------------------------- #

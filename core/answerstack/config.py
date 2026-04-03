@@ -24,6 +24,7 @@ class RAGConfig:
     temperature: float = 0.7
     reranker_enabled: bool = True
     reasoning_effort: str | None = None
+    max_completion_tokens: int | None = None
     system_prompt: str = field(
         default=(
             "You are a helpful assistant that answers questions based on the provided context. "

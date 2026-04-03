@@ -281,7 +281,7 @@ async def test_get_settings_includes_reasoning_effort(async_client):
 
 async def test_update_reasoning_effort_valid_values(async_client):
     """PUT /settings with valid reasoning_effort values persists them."""
-    for value in ["low", "medium", "high"]:
+    for value in ["none", "low", "medium", "high"]:
         response = await async_client.put(
             "/api/v1/settings",
             json={"reasoning_effort": value},
