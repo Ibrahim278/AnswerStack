@@ -617,6 +617,7 @@ async def run_indexing_job(
     project_id: UUID,
     vector_repo: VectorRepository,
     embedding_service: EmbeddingService,
+    provider_service: object | None = None,
 ) -> None:
     """Execute the indexing pipeline in the background.
 
@@ -881,6 +882,34 @@ async def run_indexing_job(
                 project_id=str(project_id),
                 documents=total_docs,
             )
+
+            # Pre-generate suggested prompts in the background so they are
+            # ready instantly when the user opens the chat page.
+            if provider_service is not None:
+                try:
+                    from app.api.v1.suggested_prompts import (
+                        generate_and_cache_prompts,
+                        invalidate_prompt_cache,
+                    )
+
+                    invalidate_prompt_cache(str(project_id))
+                    prompts = await generate_and_cache_prompts(
+                        project_id=str(project_id),
+                        vector_repo=vector_repo,
+                        provider_service=provider_service,
+                        session_factory=session_factory,
+                    )
+                    log.info(
+                        "Pre-generated suggested prompts for project",
+                        project_id=str(project_id),
+                        prompt_count=len(prompts),
+                    )
+                except Exception:
+                    log.warning(
+                        "Failed to pre-generate suggested prompts",
+                        project_id=str(project_id),
+                        exc_info=True,
+                    )
 
     except Exception as e:
         log.error(

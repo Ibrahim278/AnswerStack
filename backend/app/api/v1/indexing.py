@@ -46,6 +46,7 @@ async def trigger_build(
             project_id,
             request.app.state.vector_repo,
             request.app.state.embedding_service,
+            provider_service=request.app.state.provider_service,
         )
     )
 
@@ -100,6 +101,7 @@ async def retry_job(
             project_id,
             request.app.state.vector_repo,
             request.app.state.embedding_service,
+            provider_service=request.app.state.provider_service,
         )
     )
 

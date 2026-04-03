@@ -6,6 +6,10 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Request
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from answerstack.provider import ProviderService
+from answerstack.vector import VectorRepository
 
 logger = structlog.get_logger()
 
@@ -23,34 +27,37 @@ STATIC_PROMPTS = [
 ]
 
 
-@router.post("/suggested-prompts")
-async def get_suggested_prompts(
-    project_id: UUID,
-    request: Request,
-):
-    """Generate suggested prompts based on project content.
+def invalidate_prompt_cache(project_id: str) -> None:
+    """Remove the cached prompts for a given project, forcing regeneration."""
+    _prompt_cache.pop(project_id, None)
 
-    Fetches sample chunks from ChromaDB, asks LLM to generate questions.
-    Returns cached results for 5 minutes per project.
+
+async def generate_and_cache_prompts(
+    project_id: str,
+    vector_repo: VectorRepository,
+    provider_service: ProviderService,
+    session_factory: async_sessionmaker,
+) -> list[str]:
+    """Generate suggested prompts from project content and cache the result.
+
+    This is a standalone function that can be called from both the endpoint
+    and background tasks (e.g., after indexing completes). It never raises --
+    on any failure it returns STATIC_PROMPTS.
     """
-    cache_key = str(project_id)
+    import asyncio
+
+    cache_key = project_id
     now = time.time()
 
-    # Check cache
+    # Check cache first
     if cache_key in _prompt_cache and _prompt_cache[cache_key]["expires_at"] > now:
-        return {"prompts": _prompt_cache[cache_key]["prompts"]}
-
-    # Access singletons
-    provider_service = request.app.state.provider_service
-    vector_repo = request.app.state.vector_repo
+        return _prompt_cache[cache_key]["prompts"]
 
     if not provider_service.is_configured:
-        return {"prompts": STATIC_PROMPTS}
+        return STATIC_PROMPTS
 
     try:
         # Fetch sample chunks from ChromaDB (10 random)
-        import asyncio
-
         collection_name = f"project_{project_id}"
         results = await asyncio.to_thread(
             vector_repo.query_random_chunks,
@@ -59,7 +66,7 @@ async def get_suggested_prompts(
         )
 
         if not results:
-            return {"prompts": STATIC_PROMPTS}
+            return STATIC_PROMPTS
 
         # Build prompt for LLM
         chunk_texts = "\n---\n".join(results)
@@ -70,7 +77,6 @@ async def get_suggested_prompts(
         )
 
         client = provider_service._client
-        session_factory = request.app.state.session_factory
 
         # Get current model from settings
         from app.repositories.settings import SQLAlchemySettingsRepository
@@ -103,10 +109,34 @@ async def get_suggested_prompts(
             "expires_at": now + CACHE_TTL,
         }
 
-        return {"prompts": prompts}
+        return prompts
 
     except Exception:
         logger.exception(
-            "Failed to generate suggested prompts", project_id=str(project_id)
+            "Failed to generate suggested prompts", project_id=project_id
         )
-        return {"prompts": STATIC_PROMPTS}
+        return STATIC_PROMPTS
+
+
+@router.get("/suggested-prompts")
+async def get_suggested_prompts(
+    project_id: UUID,
+    request: Request,
+):
+    """Generate suggested prompts based on project content.
+
+    Fetches sample chunks from ChromaDB, asks LLM to generate questions.
+    Returns cached results for 5 minutes per project.
+    """
+    provider_service = request.app.state.provider_service
+    vector_repo = request.app.state.vector_repo
+    session_factory = request.app.state.session_factory
+
+    prompts = await generate_and_cache_prompts(
+        project_id=str(project_id),
+        vector_repo=vector_repo,
+        provider_service=provider_service,
+        session_factory=session_factory,
+    )
+
+    return {"prompts": prompts}
