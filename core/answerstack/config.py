@@ -22,7 +22,7 @@ class RAGConfig:
     initial_k: int = 20
     similarity_threshold: float = 0.3
     temperature: float = 0.7
-    reranker_enabled: bool = True
+    reranker_enabled: bool = False
     reasoning_effort: str | None = None
     max_completion_tokens: int | None = None
     system_prompt: str = field(
