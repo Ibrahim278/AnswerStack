@@ -81,6 +81,7 @@ export interface SettingsResponse {
   top_k: number;
   similarity_threshold: number;
   reranker_enabled: boolean;
+  reasoning_effort: string;
   tts_provider: string;
   tts_voice_id: string;
   provider_capabilities: Record<string, unknown> | null;
@@ -99,6 +100,7 @@ export interface SettingsUpdate {
   top_k?: number | null;
   similarity_threshold?: number | null;
   reranker_enabled?: boolean | null;
+  reasoning_effort?: string | null;
   tts_provider?: string | null;
   tts_voice_id?: string | null;
 }

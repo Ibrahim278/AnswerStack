@@ -20,6 +20,7 @@ class SettingsResponse(BaseModel):
     top_k: int
     similarity_threshold: float
     reranker_enabled: bool
+    reasoning_effort: str
     tts_provider: str
     tts_voice_id: str
     provider_capabilities: dict | None
@@ -47,8 +48,19 @@ class SettingsUpdate(BaseModel):
     top_k: int | None = Field(None, ge=1, le=50)
     similarity_threshold: float | None = Field(None, ge=0.0, le=1.0)
     reranker_enabled: bool | None = None
+    reasoning_effort: str | None = Field(None, max_length=20)
     tts_provider: str | None = Field(None, max_length=50)
     tts_voice_id: str | None = Field(None, max_length=255)
+
+    @field_validator("reasoning_effort")
+    @classmethod
+    def validate_reasoning_effort(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {"", "low", "medium", "high"}
+        if v not in allowed:
+            raise ValueError(f"reasoning_effort must be one of: {', '.join(sorted(allowed - {''}))} (or empty to disable)")
+        return v
 
     @field_validator("provider_url")
     @classmethod

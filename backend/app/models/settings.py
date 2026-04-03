@@ -51,6 +51,9 @@ class Settings(Base):
     reranker_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )
+    reasoning_effort: Mapped[str] = mapped_column(
+        String(20), default="", nullable=False, server_default=""
+    )
     tts_provider: Mapped[str] = mapped_column(
         String(50), default="", nullable=False, server_default=""
     )

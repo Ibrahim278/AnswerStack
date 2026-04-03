@@ -267,6 +267,75 @@ async def test_empty_update_returns_current(async_client):
     assert after_data["chunk_size"] == before_data["chunk_size"]
 
 
+# --- Reasoning effort settings ---
+
+
+async def test_get_settings_includes_reasoning_effort(async_client):
+    """GET /settings returns reasoning_effort field with empty default."""
+    response = await async_client.get("/api/v1/settings")
+    assert response.status_code == 200
+    data = response.json()
+    assert "reasoning_effort" in data
+    assert data["reasoning_effort"] == ""
+
+
+async def test_update_reasoning_effort_valid_values(async_client):
+    """PUT /settings with valid reasoning_effort values persists them."""
+    for value in ["low", "medium", "high"]:
+        response = await async_client.put(
+            "/api/v1/settings",
+            json={"reasoning_effort": value},
+        )
+        assert response.status_code == 200
+        assert response.json()["reasoning_effort"] == value
+
+        # Verify it persists
+        get_response = await async_client.get("/api/v1/settings")
+        assert get_response.json()["reasoning_effort"] == value
+
+
+async def test_update_reasoning_effort_empty_disables(async_client):
+    """PUT /settings with empty reasoning_effort disables it."""
+    # Set a value first
+    await async_client.put("/api/v1/settings", json={"reasoning_effort": "high"})
+
+    # Clear it
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"reasoning_effort": ""},
+    )
+    assert response.status_code == 200
+    assert response.json()["reasoning_effort"] == ""
+
+
+async def test_update_reasoning_effort_invalid_value_rejected(async_client):
+    """PUT /settings with invalid reasoning_effort returns 422."""
+    response = await async_client.put(
+        "/api/v1/settings",
+        json={"reasoning_effort": "maximum"},
+    )
+    assert response.status_code == 422
+
+
+async def test_reset_settings_clears_reasoning_effort(async_client):
+    """PUT /settings/reset resets reasoning_effort to empty default."""
+    await async_client.put("/api/v1/settings", json={"reasoning_effort": "high"})
+
+    response = await async_client.put("/api/v1/settings/reset")
+    assert response.status_code == 200
+    assert response.json()["reasoning_effort"] == ""
+
+
+async def test_partial_update_preserves_reasoning_effort(async_client):
+    """Updating other fields does not change reasoning_effort."""
+    await async_client.put("/api/v1/settings", json={"reasoning_effort": "medium"})
+
+    # Update temperature only
+    response = await async_client.put("/api/v1/settings", json={"temperature": 0.8})
+    assert response.status_code == 200
+    assert response.json()["reasoning_effort"] == "medium"
+
+
 # --- TTS voice settings ---
 
 
