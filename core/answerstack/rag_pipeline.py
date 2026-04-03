@@ -11,6 +11,7 @@ import structlog
 
 from answerstack.config import RAGConfig
 from answerstack.embedding import OpenAIEmbeddingService
+from answerstack.prompts import build_rag_prompt
 from answerstack.provider import ProviderService
 from answerstack.reranker import create_flashrank_ranker
 from answerstack.retrieval import RetrievalService, RetrievedChunk
@@ -138,22 +139,10 @@ class RAGPipeline:
         ]
         yield SourcesEvent(sources=sources_payload)
 
-        # Build prompt with source context
+        # Build prompt with source context (hardened against injection)
         source_context = RetrievalService.build_source_context(chunks)
-        effective_prompt = system_prompt or self._config.system_prompt
-        if source_context:
-            effective_prompt += (
-                "\n\n"
-                "INSTRUCTIONS:\n"
-                "- ONLY answer using information from the CONTEXT section below. "
-                "NEVER use your training data or prior knowledge.\n"
-                "- Every factual claim MUST include a citation like [Source 1], [Source 2].\n"
-                "- If the context does not contain enough information to answer, "
-                'say exactly: "I don\'t have enough information in the provided sources '
-                'to answer this question." Do NOT attempt to answer from memory.\n'
-                "- Be concise and accurate.\n\n"
-                "CONTEXT:\n" + source_context
-            )
+        base_prompt = system_prompt or self._config.system_prompt
+        effective_prompt = build_rag_prompt(base_prompt, source_context)
 
         # Build messages array
         llm_messages = [{"role": "system", "content": effective_prompt}]
