@@ -23,6 +23,7 @@ class RAGConfig:
     similarity_threshold: float = 0.3
     temperature: float = 0.7
     reranker_enabled: bool = True
+    reasoning_effort: str | None = None
     system_prompt: str = field(
         default=(
             "You are a helpful assistant that answers questions based on the provided context. "

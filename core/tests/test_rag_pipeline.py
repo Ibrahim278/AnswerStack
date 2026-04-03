@@ -293,6 +293,54 @@ async def test_query_with_no_chunks_still_streams(sample_config):
 
 
 # --------------------------------------------------------------------------- #
+# reasoning_effort parameter tests
+# --------------------------------------------------------------------------- #
+
+async def test_query_passes_reasoning_effort_when_set(sample_config):
+    """reasoning_effort is forwarded to the LLM create call when configured."""
+    sample_config.reasoning_effort = "high"
+    pipeline = _make_pipeline(sample_config)
+
+    events = await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["reasoning_effort"] == "high"
+
+
+async def test_query_omits_reasoning_effort_when_none(sample_config):
+    """reasoning_effort is NOT passed to the LLM when it is None (default)."""
+    assert sample_config.reasoning_effort is None
+    pipeline = _make_pipeline(sample_config)
+
+    events = await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert "reasoning_effort" not in call_kwargs
+
+
+async def test_query_reasoning_effort_low(sample_config):
+    """reasoning_effort='low' is correctly forwarded."""
+    sample_config.reasoning_effort = "low"
+    pipeline = _make_pipeline(sample_config)
+
+    events = await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["reasoning_effort"] == "low"
+
+
+async def test_query_reasoning_effort_medium(sample_config):
+    """reasoning_effort='medium' is correctly forwarded."""
+    sample_config.reasoning_effort = "medium"
+    pipeline = _make_pipeline(sample_config)
+
+    events = await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["reasoning_effort"] == "medium"
+
+
+# --------------------------------------------------------------------------- #
 # Sync wrapper
 # --------------------------------------------------------------------------- #
 

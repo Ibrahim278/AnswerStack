@@ -43,6 +43,7 @@ class TestRAGConfig:
         assert config.similarity_threshold == 0.3
         assert config.temperature == 0.7
         assert config.reranker_enabled is True
+        assert config.reasoning_effort is None
         assert "helpful assistant" in config.system_prompt
         assert "[Source N]" in config.system_prompt
 
@@ -61,6 +62,7 @@ class TestRAGConfig:
             similarity_threshold=0.5,
             temperature=0.2,
             reranker_enabled=False,
+            reasoning_effort="high",
             system_prompt="Custom system prompt",
         )
         assert config.provider_url == "http://remote:8080/v1"
@@ -75,6 +77,7 @@ class TestRAGConfig:
         assert config.similarity_threshold == 0.5
         assert config.temperature == 0.2
         assert config.reranker_enabled is False
+        assert config.reasoning_effort == "high"
         assert config.system_prompt == "Custom system prompt"
 
     def test_is_dataclass(self):

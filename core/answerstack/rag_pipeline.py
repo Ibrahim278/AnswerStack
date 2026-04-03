@@ -164,12 +164,15 @@ class RAGPipeline:
         # Stage 2: Stream LLM response
         try:
             client = self._provider._client
-            stream = await client.chat.completions.create(
-                model=self._config.provider_model,
-                messages=llm_messages,
-                temperature=self._config.temperature,
-                stream=True,
-            )
+            create_kwargs: dict = {
+                "model": self._config.provider_model,
+                "messages": llm_messages,
+                "temperature": self._config.temperature,
+                "stream": True,
+            }
+            if self._config.reasoning_effort is not None:
+                create_kwargs["reasoning_effort"] = self._config.reasoning_effort
+            stream = await client.chat.completions.create(**create_kwargs)
 
             full_response = ""
             token_count = 0
