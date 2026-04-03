@@ -57,7 +57,7 @@ class RAGConfig:
     similarity_threshold: float = 0.3
     temperature: float = 0.7
     reranker_enabled: bool = False
-    reasoning_effort: str | None = None
+    reasoning_effort: str | None = "none"
     max_completion_tokens: int | None = None
     system_prompt: str = field(default=_DEFAULT_SYSTEM_PROMPT)
 

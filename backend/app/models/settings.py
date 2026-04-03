@@ -58,7 +58,7 @@ class Settings(Base):
         Boolean, default=True, nullable=False
     )
     reasoning_effort: Mapped[str] = mapped_column(
-        String(20), default="", nullable=False, server_default=""
+        String(20), default="none", nullable=False, server_default="none"
     )
     max_completion_tokens: Mapped[int | None] = mapped_column(
         Integer, nullable=True, default=None

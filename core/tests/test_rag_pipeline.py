@@ -307,26 +307,26 @@ async def test_query_passes_reasoning_effort_when_set(sample_config):
     assert call_kwargs["reasoning_effort"] == "high"
 
 
-async def test_query_omits_reasoning_effort_when_none(sample_config):
-    """reasoning_effort is NOT passed to the LLM when it is None (default)."""
-    assert sample_config.reasoning_effort is None
-    pipeline = _make_pipeline(sample_config)
-
-    await _collect_events(pipeline, query="test?")
-
-    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
-    assert "reasoning_effort" not in call_kwargs
-
-
-async def test_query_reasoning_effort_none_disables_thinking(sample_config):
-    """reasoning_effort='none' disables thinking on the provider."""
-    sample_config.reasoning_effort = "none"
+async def test_query_default_reasoning_effort_is_none_string(sample_config):
+    """Default reasoning_effort='none' is sent to disable thinking."""
+    assert sample_config.reasoning_effort == "none"
     pipeline = _make_pipeline(sample_config)
 
     await _collect_events(pipeline, query="test?")
 
     call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
     assert call_kwargs["reasoning_effort"] == "none"
+
+
+async def test_query_omits_reasoning_effort_when_explicitly_null(sample_config):
+    """reasoning_effort=None means don't send the kwarg at all."""
+    sample_config.reasoning_effort = None
+    pipeline = _make_pipeline(sample_config)
+
+    await _collect_events(pipeline, query="test?")
+
+    call_kwargs = pipeline._provider._client.chat.completions.create.call_args.kwargs
+    assert "reasoning_effort" not in call_kwargs
 
 
 async def test_query_reasoning_effort_low(sample_config):

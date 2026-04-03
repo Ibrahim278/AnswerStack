@@ -24,7 +24,7 @@ SETTINGS_DEFAULTS = {
     "top_k": 5,
     "similarity_threshold": 0.3,
     "reranker_enabled": True,
-    "reasoning_effort": "",
+    "reasoning_effort": "none",
     "max_completion_tokens": None,
     "tts_provider": "",
     "tts_voice_id": "",

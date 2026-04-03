@@ -523,8 +523,8 @@ class TestReasoningEffort:
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["reasoning_effort"] == "high"
 
-    async def test_reasoning_effort_omitted_when_empty(self, async_client_with_chat, mock_openai_client):
-        """When reasoning_effort is empty (default), reasoning_effort is NOT passed."""
+    async def test_reasoning_effort_default_is_none(self, async_client_with_chat, mock_openai_client):
+        """Default reasoning_effort='none' is sent to disable thinking."""
         client = async_client_with_chat
         project_id = await create_project(client)
 
@@ -543,7 +543,7 @@ class TestReasoningEffort:
         assert resp.status_code == 200
 
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
-        assert "reasoning_effort" not in call_kwargs
+        assert call_kwargs["reasoning_effort"] == "none"
 
     async def test_reasoning_effort_none_disables_thinking(self, async_client_with_chat, mock_openai_client):
         """reasoning_effort='none' sends effort='none' to disable thinking."""

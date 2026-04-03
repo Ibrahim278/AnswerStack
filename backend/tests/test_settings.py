@@ -271,12 +271,12 @@ async def test_empty_update_returns_current(async_client):
 
 
 async def test_get_settings_includes_reasoning_effort(async_client):
-    """GET /settings returns reasoning_effort field with empty default."""
+    """GET /settings returns reasoning_effort field with 'none' default."""
     response = await async_client.get("/api/v1/settings")
     assert response.status_code == 200
     data = response.json()
     assert "reasoning_effort" in data
-    assert data["reasoning_effort"] == ""
+    assert data["reasoning_effort"] == "none"
 
 
 async def test_update_reasoning_effort_valid_values(async_client):
@@ -318,12 +318,12 @@ async def test_update_reasoning_effort_invalid_value_rejected(async_client):
 
 
 async def test_reset_settings_clears_reasoning_effort(async_client):
-    """PUT /settings/reset resets reasoning_effort to empty default."""
+    """PUT /settings/reset resets reasoning_effort to 'none' default."""
     await async_client.put("/api/v1/settings", json={"reasoning_effort": "high"})
 
     response = await async_client.put("/api/v1/settings/reset")
     assert response.status_code == 200
-    assert response.json()["reasoning_effort"] == ""
+    assert response.json()["reasoning_effort"] == "none"
 
 
 async def test_partial_update_preserves_reasoning_effort(async_client):

@@ -43,7 +43,7 @@ class TestRAGConfig:
         assert config.similarity_threshold == 0.3
         assert config.temperature == 0.7
         assert config.reranker_enabled is False
-        assert config.reasoning_effort is None
+        assert config.reasoning_effort == "none"
         assert config.max_completion_tokens is None
         assert "research assistant" in config.system_prompt
         assert "[Source N]" in config.system_prompt
@@ -170,7 +170,7 @@ class TestRAGConfigFromEnv:
         monkeypatch.setenv("DATA_DIR", "/tmp/d")
         monkeypatch.setenv("REASONING_EFFORT", "")
         config = RAGConfig.from_env()
-        assert config.reasoning_effort is None
+        assert config.reasoning_effort == "none"
 
     def test_from_env_reasoning_effort_set(self, monkeypatch):
         """Non-empty REASONING_EFFORT is passed through."""
