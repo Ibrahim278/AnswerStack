@@ -24,6 +24,7 @@ class SettingsResponse(BaseModel):
     max_completion_tokens: int | None
     tts_provider: str
     tts_voice_id: str
+    active_provider_id: UUID | None
     provider_capabilities: dict | None
     updated_at: datetime
 

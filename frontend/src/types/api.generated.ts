@@ -67,6 +67,38 @@ export interface DocumentUploadResult {
   rejected: RejectedFile[];
 }
 
+// --- Provider Configs ---
+export interface ProviderConfigResponse {
+  id: string;
+  name: string;
+  provider_url: string;
+  provider_api_key: string;
+  provider_model: string;
+  embedding_model: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProviderConfigCreate {
+  name: string;
+  provider_url?: string;
+  provider_api_key?: string;
+  provider_model?: string;
+  embedding_model?: string;
+}
+
+export interface ProviderConfigUpdate {
+  name?: string;
+  provider_url?: string;
+  provider_api_key?: string;
+  provider_model?: string;
+  embedding_model?: string;
+}
+
+export interface ProviderConfigListResponse {
+  items: ProviderConfigResponse[];
+}
+
 // --- Settings ---
 export interface SettingsResponse {
   id: string;
@@ -85,6 +117,7 @@ export interface SettingsResponse {
   max_completion_tokens: number | null;
   tts_provider: string;
   tts_voice_id: string;
+  active_provider_id: string | null;
   provider_capabilities: Record<string, unknown> | null;
   updated_at: string;
 }

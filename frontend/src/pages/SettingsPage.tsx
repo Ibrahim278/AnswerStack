@@ -22,6 +22,7 @@ type LocalSettings = {
   reranker_enabled: boolean;
   tts_provider: string;
   tts_voice_id: string;
+  active_provider_id: string | null;
 };
 
 const defaultLocal: LocalSettings = {
@@ -39,6 +40,7 @@ const defaultLocal: LocalSettings = {
   reranker_enabled: true,
   tts_provider: '',
   tts_voice_id: '',
+  active_provider_id: null,
 };
 
 function settingsToLocal(s: SettingsResponse): LocalSettings {
@@ -57,6 +59,7 @@ function settingsToLocal(s: SettingsResponse): LocalSettings {
     reranker_enabled: s.reranker_enabled,
     tts_provider: s.tts_provider,
     tts_voice_id: s.tts_voice_id,
+    active_provider_id: s.active_provider_id,
   };
 }
 
@@ -78,6 +81,10 @@ export default function SettingsPage() {
 
   const update = (key: string, value: unknown) => {
     setLocalConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSettingsUpdated = (updated: SettingsResponse) => {
+    setLocalConfig(settingsToLocal(updated));
   };
 
   const handleSave = () => {
@@ -159,7 +166,7 @@ export default function SettingsPage() {
       )}
 
       <div className="space-y-6">
-        <BasicSettingsSection localConfig={localConfig} update={update} />
+        <BasicSettingsSection localConfig={localConfig} update={update} onSettingsUpdated={handleSettingsUpdated} />
 
         <SpeechSettingsSection localConfig={localConfig} update={update} />
 

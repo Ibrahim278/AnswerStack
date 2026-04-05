@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -68,6 +68,11 @@ class Settings(Base):
     )
     tts_voice_id: Mapped[str] = mapped_column(
         String(255), default="", nullable=False, server_default=""
+    )
+    active_provider_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("providers.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
     )
     provider_capabilities: Mapped[dict | None] = mapped_column(
         JSON, nullable=True

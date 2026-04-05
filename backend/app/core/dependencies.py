@@ -7,6 +7,7 @@ from app.repositories.chat import ChatRepository, SQLAlchemyChatRepository
 from app.repositories.document import DocumentRepository, SQLAlchemyDocumentRepository
 from app.repositories.indexing_job import IndexingJobRepository, SQLAlchemyIndexingJobRepository
 from app.repositories.project import ProjectRepository, SQLAlchemyProjectRepository
+from app.repositories.provider_config import ProviderConfigRepository, SQLAlchemyProviderConfigRepository
 from app.repositories.settings import SettingsRepository, SQLAlchemySettingsRepository
 from app.services.chat import ChatService
 from app.services.document import DocumentService
@@ -38,6 +39,12 @@ async def get_document_service(
     project_repo: ProjectRepository = Depends(get_project_repository),
 ) -> DocumentService:
     return DocumentService(repo, get_settings(), project_repo)
+
+
+async def get_provider_config_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> ProviderConfigRepository:
+    return SQLAlchemyProviderConfigRepository(session)
 
 
 async def get_settings_repository(

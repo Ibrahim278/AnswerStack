@@ -28,6 +28,7 @@ SETTINGS_DEFAULTS = {
     "max_completion_tokens": None,
     "tts_provider": "",
     "tts_voice_id": "",
+    "active_provider_id": None,
     "provider_capabilities": None,
 }
 

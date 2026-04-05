@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Eye, EyeOff, TestTube, Loader2 } from 'lucide-react';
 import { useProviderModels, useTestConnection } from '@/hooks/useProvider';
 import { ModelSelector } from './ModelSelector';
+import { ProviderSelector } from './ProviderSelector';
 import { TestConnectionResult } from './TestConnectionResult';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { ConnectionTestResult } from '@/types';
+import type { ConnectionTestResult, SettingsResponse } from '@/types';
 
 interface BasicSettingsSectionProps {
   localConfig: {
@@ -21,11 +22,13 @@ interface BasicSettingsSectionProps {
     temperature: number;
     system_prompt: string;
     reasoning_effort: string;
+    active_provider_id: string | null;
   };
   update: (key: string, value: unknown) => void;
+  onSettingsUpdated: (settings: SettingsResponse) => void;
 }
 
-export function BasicSettingsSection({ localConfig, update }: BasicSettingsSectionProps) {
+export function BasicSettingsSection({ localConfig, update, onSettingsUpdated }: BasicSettingsSectionProps) {
   const providerModels = useProviderModels(false);
   const testMutation = useTestConnection();
   const [showApiKey, setShowApiKey] = useState(false);
@@ -51,6 +54,12 @@ export function BasicSettingsSection({ localConfig, update }: BasicSettingsSecti
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <ProviderSelector
+            activeProviderId={localConfig.active_provider_id}
+            localConfig={localConfig}
+            onSettingsUpdated={onSettingsUpdated}
+          />
+
           <div>
             <Label className="text-xs">Provider URL</Label>
             <Input

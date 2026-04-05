@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
-from app.core.dependencies import get_settings_service
+from app.core.dependencies import get_provider_config_repository, get_settings_service
+from app.repositories.provider_config import ProviderConfigRepository
 from app.schemas.settings import SettingsResponse, SettingsUpdate
 from app.services.indexing import mark_documents_stale_after_settings_change
 from app.services.settings import SettingsService
@@ -74,6 +75,7 @@ async def update_settings(
     request: Request,
     service: SettingsService = Depends(get_settings_service),
     session: AsyncSession = Depends(get_db_session),
+    provider_repo: ProviderConfigRepository = Depends(get_provider_config_repository),
 ) -> SettingsResponse:
     """Update settings with partial data. Only provided fields are changed."""
     updates = body.model_dump(exclude_unset=True)
@@ -120,6 +122,12 @@ async def update_settings(
         settings.chunk_overlap,
         settings.embedding_model,
     )
+
+    # Sync provider field changes back to the active provider record
+    provider_fields = {"provider_url", "provider_api_key", "provider_model", "embedding_model"}
+    if settings.active_provider_id and provider_fields & updates.keys():
+        sync_data = {k: v for k, v in updates.items() if k in provider_fields}
+        await provider_repo.update(settings.active_provider_id, **sync_data)
 
     return SettingsResponse.model_validate(settings)
 

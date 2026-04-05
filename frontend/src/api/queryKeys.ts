@@ -5,6 +5,9 @@ export const queryKeys = {
   },
   documents: (projectId: string) => ['projects', projectId, 'documents'] as const,
   settings: ['settings'] as const,
+  providerConfigs: {
+    all: ['provider-configs'] as const,
+  },
   provider: {
     models: ['provider', 'models'] as const,
     testConnection: ['provider', 'test-connection'] as const,
