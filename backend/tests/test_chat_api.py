@@ -5,11 +5,10 @@ SSE-03 (event IDs), SSE-04 (message_id in message_start), CHAT-08 (no-context).
 """
 
 import json
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
-import pytest
 from httpx import AsyncClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -523,8 +522,8 @@ class TestReasoningEffort:
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["reasoning_effort"] == "high"
 
-    async def test_reasoning_effort_default_is_none(self, async_client_with_chat, mock_openai_client):
-        """Default reasoning_effort='none' is sent to disable thinking."""
+    async def test_reasoning_effort_default_sends_none(self, async_client_with_chat, mock_openai_client):
+        """Default reasoning_effort='none' is sent to explicitly disable reasoning."""
         client = async_client_with_chat
         project_id = await create_project(client)
 
@@ -545,8 +544,8 @@ class TestReasoningEffort:
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["reasoning_effort"] == "none"
 
-    async def test_reasoning_effort_none_disables_thinking(self, async_client_with_chat, mock_openai_client):
-        """reasoning_effort='none' sends effort='none' to disable thinking."""
+    async def test_reasoning_effort_none_sends_none(self, async_client_with_chat, mock_openai_client):
+        """Explicitly setting reasoning_effort='none' sends it to disable reasoning."""
         client = async_client_with_chat
         project_id = await create_project(client)
 
@@ -694,3 +693,231 @@ class TestReasoningEffort:
 
         call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
         assert "max_completion_tokens" not in call_kwargs
+
+
+class TestThinkingBlockFilter:
+    """Tests for filtering <think>...</think> reasoning blocks from streamed responses."""
+
+    @staticmethod
+    def _make_stream_from_tokens(tokens: list[str]):
+        """Create a mock async stream that yields the given token strings."""
+        async def _stream(*args, **kwargs):
+            for text in tokens:
+                chunk = MagicMock()
+                chunk.choices = [MagicMock()]
+                chunk.choices[0].delta.content = text
+                chunk.choices[0].finish_reason = None
+                yield chunk
+            final = MagicMock()
+            final.choices = [MagicMock()]
+            final.choices[0].delta.content = None
+            final.choices[0].finish_reason = "stop"
+            yield final
+        return _stream
+
+    async def test_thinking_blocks_stripped_from_stream(self, async_client_with_chat, mock_openai_client):
+        """<think>...</think> blocks are not streamed to the client."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        mock_openai_client.chat.completions.create = AsyncMock(
+            side_effect=self._make_stream_from_tokens(
+                ["<think>", "Let me think", " about this", "</think>", "The answer is 42"]
+            )
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "What is the answer?"},
+        )
+        assert resp.status_code == 200
+
+        tokens = []
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data:"):
+                data = line[len("data:"):].strip()
+                if data:
+                    tokens.append(json.loads(data))
+
+        # Find token events (strings, not dicts)
+        text_tokens = [t for t in tokens if isinstance(t, str)]
+        combined = "".join(text_tokens)
+        assert "<think>" not in combined
+        assert "Let me think" not in combined
+        assert "The answer is 42" in combined
+
+    async def test_thinking_block_split_across_tokens(self, async_client_with_chat, mock_openai_client):
+        """Thinking blocks split across multiple tokens are still filtered."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        mock_openai_client.chat.completions.create = AsyncMock(
+            side_effect=self._make_stream_from_tokens(
+                ["Before<think>reason", "ing here</think>After"]
+            )
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Test?"},
+        )
+        assert resp.status_code == 200
+
+        text_tokens = []
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data:"):
+                data = line[len("data:"):].strip()
+                if data:
+                    parsed = json.loads(data)
+                    if isinstance(parsed, str):
+                        text_tokens.append(parsed)
+
+        combined = "".join(text_tokens)
+        assert "Before" in combined
+        assert "After" in combined
+        assert "reason" not in combined
+        assert "<think>" not in combined
+
+    async def test_thinking_block_in_single_token(self, async_client_with_chat, mock_openai_client):
+        """A complete <think>...</think> block in one token is filtered."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        mock_openai_client.chat.completions.create = AsyncMock(
+            side_effect=self._make_stream_from_tokens(
+                ["prefix<think>inner</think>suffix"]
+            )
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Test?"},
+        )
+        assert resp.status_code == 200
+
+        text_tokens = []
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data:"):
+                data = line[len("data:"):].strip()
+                if data:
+                    parsed = json.loads(data)
+                    if isinstance(parsed, str):
+                        text_tokens.append(parsed)
+
+        combined = "".join(text_tokens)
+        assert combined == "prefixsuffix"
+
+    async def test_no_thinking_blocks_passes_through(self, async_client_with_chat, mock_openai_client):
+        """Responses without <think> blocks are unaffected."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        # Use default mock stream (no thinking blocks)
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Test?"},
+        )
+        assert resp.status_code == 200
+
+        text_tokens = []
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data:"):
+                data = line[len("data:"):].strip()
+                if data:
+                    parsed = json.loads(data)
+                    if isinstance(parsed, str):
+                        text_tokens.append(parsed)
+
+        combined = "".join(text_tokens)
+        assert "Hello from the assistant" in combined
+
+    async def test_gemma4_channel_thinking_stripped(self, async_client_with_chat, mock_openai_client):
+        """Gemma 4 <|channel>thought...<channel|> blocks are filtered from stream."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        mock_openai_client.chat.completions.create = AsyncMock(
+            side_effect=self._make_stream_from_tokens(
+                ["<|channel>thought", "\nLet me analyze", " the sources\n", "<channel|>", "The answer is here"]
+            )
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Test?"},
+        )
+        assert resp.status_code == 200
+
+        text_tokens = []
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data:"):
+                data = line[len("data:"):].strip()
+                if data:
+                    parsed = json.loads(data)
+                    if isinstance(parsed, str):
+                        text_tokens.append(parsed)
+
+        combined = "".join(text_tokens)
+        assert "<|channel>" not in combined
+        assert "Let me analyze" not in combined
+        assert "The answer is here" in combined
+
+    async def test_gemma4_channel_split_across_tokens(self, async_client_with_chat, mock_openai_client):
+        """Gemma 4 thinking blocks split across tokens are filtered."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        mock_openai_client.chat.completions.create = AsyncMock(
+            side_effect=self._make_stream_from_tokens(
+                ["Before<|channel>thought reasoning", " more reasoning<channel|>After"]
+            )
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Test?"},
+        )
+        assert resp.status_code == 200
+
+        text_tokens = []
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data:"):
+                data = line[len("data:"):].strip()
+                if data:
+                    parsed = json.loads(data)
+                    if isinstance(parsed, str):
+                        text_tokens.append(parsed)
+
+        combined = "".join(text_tokens)
+        assert "Before" in combined
+        assert "After" in combined
+        assert "reasoning" not in combined
+
+    async def test_gemma4_channel_in_single_token(self, async_client_with_chat, mock_openai_client):
+        """Complete Gemma 4 thinking block in one token is filtered."""
+        client = async_client_with_chat
+        project_id = await create_project(client)
+
+        mock_openai_client.chat.completions.create = AsyncMock(
+            side_effect=self._make_stream_from_tokens(
+                ["prefix<|channel>thought inner<channel|>suffix"]
+            )
+        )
+
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/chat/stream",
+            json={"question": "Test?"},
+        )
+        assert resp.status_code == 200
+
+        text_tokens = []
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data:"):
+                data = line[len("data:"):].strip()
+                if data:
+                    parsed = json.loads(data)
+                    if isinstance(parsed, str):
+                        text_tokens.append(parsed)
+
+        combined = "".join(text_tokens)
+        assert combined == "prefixsuffix"

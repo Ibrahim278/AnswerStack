@@ -862,29 +862,10 @@ async def run_indexing_job(
             if final_hash != current_chunk_params_hash:
                 final_index_status = "stale"
 
-            # Mark job completed
-            completed_at = datetime.now(timezone.utc)
-            await job_repo.update_status(job_id, IndexingJobStatus.COMPLETED)
-            await session.execute(
-                update(Project)
-                .where(Project.id == project_id)
-                .values(
-                    last_indexed_at=completed_at,
-                    index_status=final_index_status,
-                    updated_at=completed_at,
-                )
-            )
-            await session.commit()
-
-            log.info(
-                "Indexing job completed",
-                job_id=str(job_id),
-                project_id=str(project_id),
-                documents=total_docs,
-            )
-
-            # Pre-generate suggested prompts in the background so they are
-            # ready instantly when the user opens the chat page.
+            # Pre-generate suggested prompts BEFORE committing completion so
+            # they are cached and ready when the frontend detects the status
+            # change and fetches them (avoids a race where the frontend refetch
+            # arrives before generation finishes).
             if provider_service is not None:
                 try:
                     from app.api.v1.suggested_prompts import (
@@ -910,6 +891,28 @@ async def run_indexing_job(
                         project_id=str(project_id),
                         exc_info=True,
                     )
+
+            # Mark job completed — commit AFTER prompt generation so prompts
+            # are cached before the frontend can detect the status transition.
+            completed_at = datetime.now(timezone.utc)
+            await job_repo.update_status(job_id, IndexingJobStatus.COMPLETED)
+            await session.execute(
+                update(Project)
+                .where(Project.id == project_id)
+                .values(
+                    last_indexed_at=completed_at,
+                    index_status=final_index_status,
+                    updated_at=completed_at,
+                )
+            )
+            await session.commit()
+
+            log.info(
+                "Indexing job completed",
+                job_id=str(job_id),
+                project_id=str(project_id),
+                documents=total_docs,
+            )
 
     except Exception as e:
         log.error(

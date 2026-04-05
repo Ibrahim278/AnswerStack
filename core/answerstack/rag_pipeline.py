@@ -7,7 +7,7 @@ into a single ergonomic entry point for RAG queries.
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import structlog
 
@@ -17,6 +17,7 @@ from answerstack.prompts import build_rag_prompt
 from answerstack.provider import ProviderService
 from answerstack.reranker import create_flashrank_ranker
 from answerstack.retrieval import RetrievalService, RetrievedChunk
+from answerstack.streaming import ThinkingFilter, strip_thinking_blocks
 from answerstack.types import (
     CompleteEvent,
     ErrorEvent,
@@ -105,6 +106,7 @@ class RAGPipeline:
         collection_name: str = "default",
         system_prompt: str | None = None,
         messages: list[dict] | None = None,
+        filter_reasoning: bool = True,
     ) -> AsyncGenerator[
         TokenEvent | SourcesEvent | CompleteEvent | ErrorEvent, None
     ]:
@@ -169,14 +171,20 @@ class RAGPipeline:
 
             full_response = ""
             token_count = 0
+            thinking_filter = ThinkingFilter(enabled=filter_reasoning)
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content is not None:
                     token_text = chunk.choices[0].delta.content
                     full_response += token_text
-                    token_count += 1
-                    yield TokenEvent(text=token_text)
+                    filtered = thinking_filter.process(token_text)
+                    if filtered is not None:
+                        token_count += 1
+                        yield TokenEvent(text=filtered)
 
-            yield CompleteEvent(full_text=full_response, token_count=token_count)
+            yield CompleteEvent(
+                full_text=strip_thinking_blocks(full_response) if filter_reasoning else full_response,
+                token_count=token_count,
+            )
         except Exception as e:
             logger.error("LLM generation failed", error=str(e))
             yield ErrorEvent(message=str(e))

@@ -7,6 +7,9 @@ node_modules/
 
 # Database
 data/
+*.db
+*.db-shm
+*.db-wal
 
 # Python
 __pycache__/

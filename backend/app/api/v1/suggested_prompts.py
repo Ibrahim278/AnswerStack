@@ -1,6 +1,7 @@
 """Suggested prompts endpoint for chat empty state."""
 
 import json
+import re
 import time
 from uuid import UUID
 
@@ -17,7 +18,8 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["chat"])
 
 # In-memory cache: { project_id: { "prompts": [...], "expires_at": float } }
 _prompt_cache: dict[str, dict] = {}
-CACHE_TTL = 300  # 5 minutes per D-51
+# Long TTL since prompts are only regenerated during indexing, not on every request.
+CACHE_TTL = 86400  # 24 hours
 
 STATIC_PROMPTS = [
     "What are the main topics covered?",
@@ -96,6 +98,9 @@ async def generate_and_cache_prompts(
         )
 
         content = response.choices[0].message.content or "[]"
+        # Strip markdown code fences (```json ... ``` or ``` ... ```)
+        content = re.sub(r"^```(?:json)?\s*\n?", "", content.strip())
+        content = re.sub(r"\n?```\s*$", "", content.strip())
         # Parse JSON array from response
         prompts = json.loads(content)
         if not isinstance(prompts, list) or len(prompts) == 0:
@@ -123,20 +128,15 @@ async def get_suggested_prompts(
     project_id: UUID,
     request: Request,
 ):
-    """Generate suggested prompts based on project content.
+    """Return cached suggested prompts for a project.
 
-    Fetches sample chunks from ChromaDB, asks LLM to generate questions.
-    Returns cached results for 5 minutes per project.
+    Prompts are only generated during indexing/re-indexing. This endpoint
+    serves the cached result or falls back to static prompts.
     """
-    provider_service = request.app.state.provider_service
-    vector_repo = request.app.state.vector_repo
-    session_factory = request.app.state.session_factory
+    cache_key = str(project_id)
+    now = time.time()
 
-    prompts = await generate_and_cache_prompts(
-        project_id=str(project_id),
-        vector_repo=vector_repo,
-        provider_service=provider_service,
-        session_factory=session_factory,
-    )
+    if cache_key in _prompt_cache and _prompt_cache[cache_key]["expires_at"] > now:
+        return {"prompts": _prompt_cache[cache_key]["prompts"]}
 
-    return {"prompts": prompts}
+    return {"prompts": STATIC_PROMPTS}

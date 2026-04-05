@@ -7,6 +7,9 @@ import uuid
 from uuid import UUID
 
 import structlog
+from answerstack.prompts import build_followup_prompt, build_rag_prompt
+from answerstack.retrieval import RetrievalService
+from answerstack.streaming import ThinkingFilter, strip_thinking_blocks
 from fastapi import APIRouter, Depends, Request, Response
 from sse_starlette.sse import EventSourceResponse
 
@@ -22,8 +25,6 @@ from app.schemas.chat import (
     ChatSessionResponse,
 )
 from app.services.chat import ChatService
-from answerstack.prompts import build_followup_prompt, build_rag_prompt
-from answerstack.retrieval import RetrievalService
 
 logger = structlog.get_logger()
 
@@ -325,7 +326,7 @@ async def stream_chat(
                     "temperature": settings.temperature,
                     "stream": True,
                 }
-                if settings.reasoning_effort:
+                if settings.reasoning_effort and settings.reasoning_effort != "":
                     create_kwargs["reasoning_effort"] = settings.reasoning_effort
                 if settings.max_completion_tokens is not None:
                     create_kwargs["max_completion_tokens"] = settings.max_completion_tokens
@@ -333,6 +334,7 @@ async def stream_chat(
 
                 full_response = ""
                 token_count = 0
+                thinking_filter = ThinkingFilter()
                 async for chunk in stream:
                     if await request.is_disconnected():
                         close_stream = getattr(stream, "close", None)
@@ -347,13 +349,19 @@ async def stream_chat(
                     ):
                         token_text = chunk.choices[0].delta.content
                         full_response += token_text
-                        token_count += 1
-                        event_seq += 1
-                        yield {
-                            "event": "token",
-                            "id": str(event_seq),
-                            "data": json.dumps(token_text),
-                        }
+
+                        filtered = thinking_filter.process(token_text)
+                        if filtered is not None:
+                            token_count += 1
+                            event_seq += 1
+                            yield {
+                                "event": "token",
+                                "id": str(event_seq),
+                                "data": json.dumps(filtered),
+                            }
+
+                # Strip thinking blocks from the stored response
+                full_response = strip_thinking_blocks(full_response)
 
                 # Only keep sources the LLM actually cited
                 cited_nums = set(
