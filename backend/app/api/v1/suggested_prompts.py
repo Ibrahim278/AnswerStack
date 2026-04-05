@@ -6,11 +6,13 @@ import time
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Request
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
 from answerstack.provider import ProviderService
 from answerstack.vector import VectorRepository
+from fastapi import APIRouter, Request
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.models.project import Project
 
 logger = structlog.get_logger()
 
@@ -51,7 +53,7 @@ async def generate_and_cache_prompts(
     cache_key = project_id
     now = time.time()
 
-    # Check cache first
+    # Check in-memory cache first
     if cache_key in _prompt_cache and _prompt_cache[cache_key]["expires_at"] > now:
         return _prompt_cache[cache_key]["prompts"]
 
@@ -108,11 +110,20 @@ async def generate_and_cache_prompts(
         else:
             prompts = [str(p) for p in prompts[:4]]
 
-        # Cache result
+        # Cache in memory
         _prompt_cache[cache_key] = {
             "prompts": prompts,
             "expires_at": now + CACHE_TTL,
         }
+
+        # Persist to DB
+        async with session_factory() as db_session:
+            await db_session.execute(
+                update(Project)
+                .where(Project.id == UUID(project_id))
+                .values(suggested_prompts=prompts)
+            )
+            await db_session.commit()
 
         return prompts
 
@@ -128,15 +139,31 @@ async def get_suggested_prompts(
     project_id: UUID,
     request: Request,
 ):
-    """Return cached suggested prompts for a project.
+    """Return suggested prompts for a project.
 
-    Prompts are only generated during indexing/re-indexing. This endpoint
-    serves the cached result or falls back to static prompts.
+    Checks in-memory cache first, then DB, then falls back to static prompts.
     """
     cache_key = str(project_id)
     now = time.time()
 
+    # 1. In-memory cache (fast path)
     if cache_key in _prompt_cache and _prompt_cache[cache_key]["expires_at"] > now:
         return {"prompts": _prompt_cache[cache_key]["prompts"]}
 
+    # 2. Load from DB
+    session_factory = request.app.state.session_factory
+    async with session_factory() as db_session:
+        result = await db_session.execute(
+            select(Project.suggested_prompts).where(Project.id == project_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is not None and isinstance(row, list) and len(row) > 0:
+            # Repopulate in-memory cache
+            _prompt_cache[cache_key] = {
+                "prompts": row,
+                "expires_at": now + CACHE_TTL,
+            }
+            return {"prompts": row}
+
+    # 3. Static fallback
     return {"prompts": STATIC_PROMPTS}

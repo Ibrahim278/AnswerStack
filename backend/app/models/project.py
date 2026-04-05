@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -40,4 +40,7 @@ class Project(Base):
         String(20),
         default="not_indexed",
         nullable=False,
+    )
+    suggested_prompts: Mapped[list | None] = mapped_column(
+        JSON, nullable=True, default=None
     )
