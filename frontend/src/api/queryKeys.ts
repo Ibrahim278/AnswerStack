@@ -10,6 +10,8 @@ export const queryKeys = {
   },
   provider: {
     models: ['provider', 'models'] as const,
+    chatModels: ['provider', 'models', 'chat'] as const,
+    embeddingModels: ['provider', 'models', 'embedding'] as const,
     testConnection: ['provider', 'test-connection'] as const,
   },
   indexing: (projectId: string) => ['projects', projectId, 'indexing'] as const,

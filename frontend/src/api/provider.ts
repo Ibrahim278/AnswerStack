@@ -8,8 +8,9 @@ class ProviderApi {
     });
   }
 
-  async listModels(): Promise<ModelListResponse> {
-    return apiFetch<ModelListResponse>('/provider/models');
+  async listModels(type?: 'chat' | 'embedding'): Promise<ModelListResponse> {
+    const params = type ? `?type=${type}` : '';
+    return apiFetch<ModelListResponse>(`/provider/models${params}`);
   }
 }
 

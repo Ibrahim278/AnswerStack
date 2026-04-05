@@ -112,7 +112,10 @@ export function ModelSelector({
         <Button
           variant="outline"
           size="icon"
-          onClick={onRefresh}
+          onClick={() => {
+            onRefresh();
+            setOpen(true);
+          }}
           disabled={isFetching}
           aria-label={`Refresh ${label} list`}
           className="shrink-0"

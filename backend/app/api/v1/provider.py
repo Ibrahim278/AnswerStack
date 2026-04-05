@@ -50,14 +50,24 @@ async def test_connection(
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
     request: Request,
+    type: str | None = None,
 ) -> ModelListResponse:
-    """List available models from the configured provider."""
+    """List available models from the configured provider.
+
+    Args:
+        type: Optional filter — "embedding" returns only embedding models.
+    """
     provider_service = _get_provider_service(request)
 
     if not provider_service.is_configured:
         raise ProviderError("Provider not configured. Set provider URL and API key in settings first.")
 
-    models, cached = await provider_service.list_models()
+    if type == "embedding":
+        models, cached = await provider_service.list_embedding_models()
+    else:
+        models, cached = await provider_service.list_models()
+        if type == "chat":
+            models = [m for m in models if "embed" not in m["id"].lower()]
 
     warning = None
     if len(models) == 0:

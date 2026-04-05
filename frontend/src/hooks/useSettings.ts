@@ -16,7 +16,8 @@ export function useUpdateSettings() {
     mutationFn: (data: SettingsUpdate) => settingsApi.update(data),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.provider.models });
+      queryClient.removeQueries({ queryKey: queryKeys.provider.chatModels });
+      queryClient.removeQueries({ queryKey: queryKeys.provider.embeddingModels });
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
       void queryClient.invalidateQueries({ queryKey: ['system-status'] });
     },
@@ -29,7 +30,8 @@ export function useResetSettings() {
     mutationFn: () => settingsApi.reset(),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.provider.models });
+      queryClient.removeQueries({ queryKey: queryKeys.provider.chatModels });
+      queryClient.removeQueries({ queryKey: queryKeys.provider.embeddingModels });
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
       void queryClient.invalidateQueries({ queryKey: ['system-status'] });
     },

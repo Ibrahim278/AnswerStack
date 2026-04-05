@@ -28,6 +28,8 @@ class ProviderService:
         self._current_api_key: str | None = None
         self._models_cache: list[dict] | None = None
         self._models_cache_time: float = 0
+        self._embedding_models_cache: list[dict] | None = None
+        self._embedding_models_cache_time: float = 0
         self._cache_ttl: float = 300.0
 
     async def configure(self, base_url: str, api_key: str) -> None:
@@ -45,6 +47,8 @@ class ProviderService:
         self._current_api_key = api_key
         self._models_cache = None
         self._models_cache_time = 0
+        self._embedding_models_cache = None
+        self._embedding_models_cache_time = 0
         logger.info("Provider configured", base_url=base_url)
 
     async def close(self) -> None:
@@ -56,6 +60,8 @@ class ProviderService:
         self._current_api_key = None
         self._models_cache = None
         self._models_cache_time = 0
+        self._embedding_models_cache = None
+        self._embedding_models_cache_time = 0
 
     @property
     def is_configured(self) -> bool:
@@ -74,9 +80,12 @@ class ProviderService:
         if self._models_cache is not None and (time.monotonic() - self._models_cache_time) < self._cache_ttl:
             return (self._models_cache, True)
 
+        # Use a longer timeout for model listing — some providers (e.g. OpenRouter)
+        # return thousands of models and need more time.
+        list_client = self._client.with_options(timeout=httpx.Timeout(60.0, connect=10.0))
         try:
-            response = await self._client.models.list()
-            models = [{"id": m.id, "owned_by": m.owned_by} for m in response.data]
+            response = await list_client.models.list()
+            models = [{"id": m.id, "owned_by": getattr(m, "owned_by", "") or ""} for m in response.data]
             self._models_cache = models
             self._models_cache_time = time.monotonic()
             return (models, False)
@@ -107,6 +116,54 @@ class ProviderService:
                 f"Provider returned an error: {e.message}",
                 retryable=False,
             ) from e
+        except Exception as e:
+            logger.exception("Unexpected error listing models", error=str(e))
+            raise ProviderError(
+                f"Failed to list models: {e}",
+                retryable=True,
+            ) from e
+
+    async def list_embedding_models(self) -> tuple[list[dict], bool]:
+        """List embedding models from the provider.
+
+        Tries the dedicated /embeddings/models endpoint first (e.g. OpenRouter),
+        then falls back to filtering the general model list by name.
+
+        Returns:
+            Tuple of (models_list, from_cache).
+        """
+        if not self.is_configured:
+            return ([], False)
+
+        if (
+            self._embedding_models_cache is not None
+            and (time.monotonic() - self._embedding_models_cache_time) < self._cache_ttl
+        ):
+            return (self._embedding_models_cache, True)
+
+        # Try dedicated endpoint first
+        try:
+            base = self._current_base_url.rstrip("/")
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as http:
+                headers = {"Authorization": f"Bearer {self._current_api_key}"}
+                resp = await http.get(f"{base}/embeddings/models", headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json().get("data", [])
+                    models = [{"id": m["id"], "owned_by": m.get("owned_by", "")} for m in data]
+                    if models:
+                        self._embedding_models_cache = models
+                        self._embedding_models_cache_time = time.monotonic()
+                        logger.info("Loaded embedding models from dedicated endpoint", count=len(models))
+                        return (models, False)
+        except Exception:
+            logger.debug("Dedicated embedding models endpoint not available, falling back to filter")
+
+        # Fall back: filter general model list by name
+        all_models, cached = await self.list_models()
+        models = [m for m in all_models if "embed" in m["id"].lower()]
+        self._embedding_models_cache = models
+        self._embedding_models_cache_time = time.monotonic()
+        return (models, cached)
 
     async def test_connection(self, chat_model: str = "", embedding_model: str = "") -> dict[str, Any]:
         """Run a three-phase connection test: auth, chat, embedding.

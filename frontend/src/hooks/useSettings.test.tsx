@@ -47,6 +47,9 @@ describe('useUpdateSettings', () => {
     const invalidateSpy = vi
       .spyOn(queryClient, 'invalidateQueries')
       .mockImplementation(async () => undefined);
+    const removeSpy = vi
+      .spyOn(queryClient, 'removeQueries')
+      .mockImplementation(() => undefined);
 
     const { result } = renderHook(() => useUpdateSettings(), { wrapper });
 
@@ -55,7 +58,8 @@ describe('useUpdateSettings', () => {
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.settings });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.provider.models });
+    expect(removeSpy).toHaveBeenCalledWith({ queryKey: queryKeys.provider.chatModels });
+    expect(removeSpy).toHaveBeenCalledWith({ queryKey: queryKeys.provider.embeddingModels });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.projects.all });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['system-status'] });
   });

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Eye, EyeOff, TestTube, Loader2 } from 'lucide-react';
-import { useProviderModels, useTestConnection } from '@/hooks/useProvider';
+import { useChatModels, useEmbeddingModels, useTestConnection } from '@/hooks/useProvider';
 import { ModelSelector } from './ModelSelector';
 import { ProviderSelector } from './ProviderSelector';
 import { TestConnectionResult } from './TestConnectionResult';
@@ -29,12 +29,17 @@ interface BasicSettingsSectionProps {
 }
 
 export function BasicSettingsSection({ localConfig, update, onSettingsUpdated }: BasicSettingsSectionProps) {
-  const providerModels = useProviderModels(false);
+  const chatModels = useChatModels(false);
+  const embeddingModels = useEmbeddingModels(false);
   const testMutation = useTestConnection();
   const [showApiKey, setShowApiKey] = useState(false);
 
-  const handleRefreshModels = () => {
-    void providerModels.refetch();
+  const handleRefreshChatModels = () => {
+    void chatModels.refetch();
+  };
+
+  const handleRefreshEmbeddingModels = () => {
+    void embeddingModels.refetch();
   };
 
   const handleTest = () => {
@@ -98,34 +103,29 @@ export function BasicSettingsSection({ localConfig, update, onSettingsUpdated }:
             label="Chat Model"
             value={localConfig.provider_model}
             onChange={(value) => update('provider_model', value)}
-            modelsData={providerModels.data}
-            isFetching={providerModels.isFetching}
-            onRefresh={handleRefreshModels}
+            modelsData={chatModels.data}
+            isFetching={chatModels.isFetching}
+            onRefresh={handleRefreshChatModels}
           />
 
           <ModelSelector
             label="Embedding Model"
             value={localConfig.embedding_model}
             onChange={(value) => update('embedding_model', value)}
-            modelsData={providerModels.data}
-            isFetching={providerModels.isFetching}
-            onRefresh={handleRefreshModels}
+            modelsData={embeddingModels.data}
+            isFetching={embeddingModels.isFetching}
+            onRefresh={handleRefreshEmbeddingModels}
           />
 
-          {providerModels.isError && (
+          {(chatModels.isError || embeddingModels.isError) && (
             <p className="text-xs text-orange-500">
               Model listing is unavailable right now. Keep the saved model IDs or try refresh again.
-              {providerModels.error instanceof Error ? ` ${providerModels.error.message}` : ''}
+              {chatModels.error instanceof Error ? ` ${chatModels.error.message}` : ''}
             </p>
           )}
-          {!providerModels.data && !providerModels.isFetching && !providerModels.isError && (
+          {!chatModels.data && !chatModels.isFetching && !chatModels.isError && (
             <p className="text-xs text-muted-foreground">
               Use the refresh icons to load the provider&apos;s available model list.
-            </p>
-          )}
-          {providerModels.data?.warning && (
-            <p className="text-xs text-muted-foreground">
-              {providerModels.data.warning}
             </p>
           )}
 

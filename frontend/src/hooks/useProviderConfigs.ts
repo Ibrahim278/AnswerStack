@@ -48,7 +48,9 @@ export function useActivateProviderConfig() {
     mutationFn: (id: string) => providerConfigsApi.activate(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.provider.models });
+      // Remove stale model lists — new provider likely has different models
+      queryClient.removeQueries({ queryKey: queryKeys.provider.chatModels });
+      queryClient.removeQueries({ queryKey: queryKeys.provider.embeddingModels });
       void queryClient.invalidateQueries({ queryKey: queryKeys.providerConfigs.all });
     },
   });
