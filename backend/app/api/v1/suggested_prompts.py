@@ -7,6 +7,7 @@ from uuid import UUID
 
 import structlog
 from answerstack.provider import ProviderService
+from answerstack.streaming import strip_thinking_blocks
 from answerstack.vector import VectorRepository
 from fastapi import APIRouter, Request
 from sqlalchemy import select, update
@@ -90,25 +91,45 @@ async def generate_and_cache_prompts(
             settings = await settings_repo.get()
             model = settings.provider_model
 
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
+        create_kwargs: dict = {
+            "model": model,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Document excerpts:\n{chunk_texts}"},
             ],
-            temperature=0.7,
-        )
+            "temperature": 0.7,
+        }
+        if settings.reasoning_effort and settings.reasoning_effort != "":
+            create_kwargs["reasoning_effort"] = settings.reasoning_effort
 
-        content = response.choices[0].message.content or "[]"
-        # Strip markdown code fences (```json ... ``` or ``` ... ```)
+        response = await client.chat.completions.create(**create_kwargs)
+
+        raw_content = response.choices[0].message.content or "[]"
+        logger.info(
+            "Suggested prompts LLM response",
+            project_id=project_id,
+            raw_content=raw_content[:500],
+        )
+        # Strip thinking blocks, then markdown code fences
+        content = strip_thinking_blocks(raw_content)
         content = re.sub(r"^```(?:json)?\s*\n?", "", content.strip())
         content = re.sub(r"\n?```\s*$", "", content.strip())
         # Parse JSON array from response
         prompts = json.loads(content)
         if not isinstance(prompts, list) or len(prompts) == 0:
-            prompts = STATIC_PROMPTS
-        else:
-            prompts = [str(p) for p in prompts[:4]]
+            logger.warning(
+                "LLM returned invalid prompts format",
+                project_id=project_id,
+                parsed=prompts,
+            )
+            return STATIC_PROMPTS
+
+        prompts = [str(p) for p in prompts[:4]]
+        logger.info(
+            "Generated suggested prompts",
+            project_id=project_id,
+            prompts=prompts,
+        )
 
         # Cache in memory
         _prompt_cache[cache_key] = {
