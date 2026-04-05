@@ -43,8 +43,8 @@ function standardSSEEvents(sessionId = SESSION_ID, messageId = MSG_ID) {
     { event: 'message_start', data: JSON.stringify({ session_id: sessionId, message_id: messageId }) },
     { event: 'retrieval_start', data: '{}' },
     { event: 'sources', data: '[]' },
-    { event: 'token', data: 'Hello' },
-    { event: 'token', data: ' world' },
+    { event: 'token', data: JSON.stringify('Hello') },
+    { event: 'token', data: JSON.stringify(' world') },
     { event: 'message_complete', data: JSON.stringify({ sources: [] }) },
     { event: 'done', data: '{}' },
   ];
@@ -169,7 +169,7 @@ describe('useChat', () => {
         const onmessage = opts.onmessage as (ev: { event: string; data: string }) => void;
         await onopen({ ok: true });
         onmessage({ event: 'message_start', data: JSON.stringify({ session_id: SESSION_ID, message_id: MSG_ID }) });
-        onmessage({ event: 'token', data: 'partial' });
+        onmessage({ event: 'token', data: JSON.stringify('partial') });
         // Stream hangs here — never sends message_complete
         await new Promise(() => {}); // never resolves
       });
@@ -207,7 +207,7 @@ describe('useChat', () => {
         const onmessage = opts.onmessage as (ev: { event: string; data: string }) => void;
         await onopen({ ok: true });
         onmessage({ event: 'message_start', data: JSON.stringify({ session_id: SESSION_ID, message_id: MSG_ID }) });
-        onmessage({ event: 'token', data: 'data' });
+        onmessage({ event: 'token', data: JSON.stringify('data') });
         await new Promise(() => {});
       });
 
@@ -237,7 +237,7 @@ describe('useChat', () => {
         const onmessage = opts.onmessage as (ev: { event: string; data: string }) => void;
         await onopen({ ok: true });
         onmessage({ event: 'message_start', data: JSON.stringify({ session_id: SESSION_ID, message_id: MSG_ID }) });
-        onmessage({ event: 'token', data: 'data' });
+        onmessage({ event: 'token', data: JSON.stringify('data') });
         await new Promise(() => {});
       });
 

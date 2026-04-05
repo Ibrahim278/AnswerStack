@@ -4,6 +4,7 @@ import pymupdf
 import pymupdf4llm
 
 from answerstack.parsers import DocumentParser, ParseResult
+from answerstack.parsers.markdown import clean_markdown
 
 
 class PdfParser(DocumentParser):
@@ -13,7 +14,8 @@ class PdfParser(DocumentParser):
         """Parse PDF content and extract text as Markdown.
 
         Uses pymupdf4llm to convert PDF pages to clean Markdown text
-        optimized for LLM/RAG use cases.
+        optimized for LLM/RAG use cases. The resulting markdown is
+        then cleaned to strip formatting noise for RAG ingestion.
 
         Args:
             content: Raw PDF file bytes.
@@ -34,6 +36,7 @@ class PdfParser(DocumentParser):
                 page_count = len(page_chunks)
             finally:
                 doc.close()
+            full_text = clean_markdown(full_text)
             return ParseResult(text=full_text, page_count=page_count)
         except ValueError:
             raise

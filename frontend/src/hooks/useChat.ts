@@ -207,8 +207,7 @@ export function useChat({ projectId, onSessionCreated, fetchFn }: UseChatOptions
                 break;
               }
               case 'token': {
-                // Token data is raw string, not JSON (per backend implementation)
-                store.appendToken(event.data);
+                store.appendToken(JSON.parse(event.data));
                 break;
               }
               case 'message_complete': {

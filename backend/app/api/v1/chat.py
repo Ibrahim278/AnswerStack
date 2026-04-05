@@ -248,7 +248,7 @@ async def stream_chat(
                     yield {
                         "event": "token",
                         "id": str(event_seq),
-                        "data": no_answer,
+                        "data": json.dumps(no_answer),
                     }
 
                     # Empty sources
@@ -352,7 +352,7 @@ async def stream_chat(
                         yield {
                             "event": "token",
                             "id": str(event_seq),
-                            "data": token_text,
+                            "data": json.dumps(token_text),
                         }
 
                 # Only keep sources the LLM actually cited
