@@ -50,6 +50,12 @@ def create_tts_provider(
         )
 
     if provider_name == PROVIDER_KOKORO:
+        try:
+            import kokoro  # noqa: F401
+        except ImportError:
+            logger.warning("Kokoro TTS requested but kokoro package is not installed (pip install kokoro)")
+            return None
+
         from app.services.speech.kokoro_tts import KokoroTTSProvider
 
         return KokoroTTSProvider(

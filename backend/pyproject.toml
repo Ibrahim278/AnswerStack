@@ -19,7 +19,6 @@ dependencies = [
     "structlog>=25.5.0",
     "uvicorn[standard]>=0.42.0",
     "httpx>=0.28.1",
-    "kokoro>=0.9.4",
 ]
 
 [tool.uv.sources]
