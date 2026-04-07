@@ -8,6 +8,8 @@ All methods are synchronous -- the service layer calls them via
 asyncio.to_thread() when needed.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 import chromadb

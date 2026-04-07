@@ -4,6 +4,8 @@ Provides a convenience factory for creating FlashRank Ranker instances
 with graceful degradation when the model is unavailable.
 """
 
+from __future__ import annotations
+
 import structlog
 from flashrank import Ranker
 

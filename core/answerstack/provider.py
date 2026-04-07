@@ -1,5 +1,7 @@
 """ProviderService — wraps AsyncOpenAI for OpenAI-compatible LLM/embedding providers."""
 
+from __future__ import annotations
+
 import time
 from typing import Any
 

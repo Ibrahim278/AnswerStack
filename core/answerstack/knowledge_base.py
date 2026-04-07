@@ -4,6 +4,8 @@ Composes internal core modules (parsers, chunking, embedding, vector storage)
 into a single ergonomic entry point for document ingestion.
 """
 
+from __future__ import annotations
+
 import asyncio
 import uuid as uuid_mod
 

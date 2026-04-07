@@ -4,6 +4,8 @@ Composes internal core modules (vector storage, embedding, retrieval, provider)
 into a single ergonomic entry point for RAG queries.
 """
 
+from __future__ import annotations
+
 import asyncio
 from typing import AsyncGenerator
 

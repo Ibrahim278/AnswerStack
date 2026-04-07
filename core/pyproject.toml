@@ -2,7 +2,7 @@
 name = "answerstack"
 version = "0.1.0"
 description = "AnswerStack core RAG library — parsing, chunking, embedding, retrieval, generation"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "chromadb>=1.5.5",
     "flashrank>=0.2.10",

@@ -1,5 +1,7 @@
 """Shared types and protocols for answerstack."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 

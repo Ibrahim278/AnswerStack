@@ -3,6 +3,8 @@
 Pure Python — zero external dependencies.
 """
 
+from __future__ import annotations
+
 DEFAULT_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 
 

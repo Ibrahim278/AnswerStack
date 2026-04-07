@@ -1,5 +1,7 @@
 """Embedding service: ABC and OpenAI-compatible implementation."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 import structlog
