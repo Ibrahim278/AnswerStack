@@ -2,11 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+OS="$(uname -s)"
 
-info()  { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
-ok()    { echo -e "\033[1;32m[OK]\033[0m    $*"; }
-warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
-error() { echo -e "\033[1;31m[ERROR]\033[0m $*"; exit 1; }
+info()  { printf '\033[1;34m[INFO]\033[0m  %s\n' "$*"; }
+ok()    { printf '\033[1;32m[OK]\033[0m    %s\n' "$*"; }
+warn()  { printf '\033[1;33m[WARN]\033[0m  %s\n' "$*"; }
+error() { printf '\033[1;31m[ERROR]\033[0m %s\n' "$*"; exit 1; }
 
 command_exists() { command -v "$1" &>/dev/null; }
 
@@ -17,14 +18,27 @@ export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 # System packages
 # ---------------------------------------------------------------------------
 info "Installing system dependencies..."
-sudo apt-get update -qq
-sudo apt-get install -y -qq \
-    build-essential \
-    curl \
-    git \
-    libssl-dev \
-    libffi-dev \
-    > /dev/null
+case "$OS" in
+    Darwin)
+        if ! command_exists brew; then
+            error "Homebrew is required. Install it first: https://brew.sh"
+        fi
+        brew install curl git openssl libffi 2>/dev/null || true
+        ;;
+    Linux)
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq \
+            build-essential \
+            curl \
+            git \
+            libssl-dev \
+            libffi-dev \
+            > /dev/null
+        ;;
+    *)
+        error "Unsupported OS: $OS"
+        ;;
+esac
 ok "System packages installed"
 
 # ---------------------------------------------------------------------------
