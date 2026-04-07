@@ -22,8 +22,8 @@ export default defineConfig({
       },
     }),
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
-      '/health': { target: 'http://localhost:8000', changeOrigin: true },
+      '/api': { target: `${hasCerts ? 'https' : 'http'}://localhost:8000`, changeOrigin: true, secure: false },
+      '/health': { target: `${hasCerts ? 'https' : 'http'}://localhost:8000`, changeOrigin: true, secure: false },
     },
   },
   plugins: [react()],

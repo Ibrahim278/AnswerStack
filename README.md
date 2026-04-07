@@ -27,11 +27,12 @@ Single-user, self-hosted. SQLite for metadata, ChromaDB for vectors, local files
 ## Quick Start
 
 ```bash
-./scripts/setup.sh     # install dependencies, run migrations, create .env
-./scripts/dev.sh       # start backend (port 8000) + frontend (port 8080)
+./scripts/setup.sh       # install dependencies, run migrations, create .env
+./scripts/run.sh dev     # backend (port 8000) + vite dev server (port 8080)
+./scripts/run.sh prod    # build frontend, serve everything on port 8000
 ```
 
-Once running, open http://localhost:8080 and configure your LLM provider in Settings.
+Once running, open the app and configure your LLM provider in Settings.
 
 The setup script installs [uv](https://docs.astral.sh/uv/), Python 3.12, and [bun](https://bun.sh/) if not already present.
 
@@ -62,7 +63,7 @@ The frontend dev server runs on port 8080 and proxies API requests to the backen
 backend/       FastAPI backend, API routes, services, database
 core/          answerstack library: parsing, chunking, embedding, retrieval, RAG pipeline
 frontend/      React SPA with TypeScript, Vite, shadcn/ui
-scripts/       Dev scripts (setup.sh, dev.sh)
+scripts/       Setup and run scripts
 ```
 
 The `core/` package is a standalone RAG engine installed as a workspace dependency by the backend. It handles document parsing, text chunking, embedding, vector storage, retrieval with reranking, and the streaming RAG pipeline. All provider communication goes through an OpenAI-compatible abstraction.

@@ -5,6 +5,8 @@ from pathlib import Path
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_v1_router
 from app.core.config import get_settings
@@ -245,6 +247,20 @@ def create_app() -> FastAPI:
 
     # Routers -- mounted under /api/v1
     app.include_router(api_v1_router, prefix="/api/v1")
+
+    # Serve built frontend (if dist/ exists)
+    frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    if frontend_dist.is_dir():
+        index_html = frontend_dist / "index.html"
+        app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="static")
+
+        @app.get("/{path:path}")
+        async def spa_fallback(path: str):
+            # Serve the actual file if it exists, otherwise index.html for SPA routing
+            file = frontend_dist / path
+            if path and file.is_file():
+                return FileResponse(file)
+            return FileResponse(index_html)
 
     return app
 

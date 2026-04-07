@@ -108,6 +108,6 @@ fi
 # Done
 # ---------------------------------------------------------------------------
 echo ""
-ok "Setup complete! Run ./scripts/dev.sh to start the app."
+ok "Setup complete! Run ./scripts/run.sh to start the app."
 warn "If this is a new shell, restart it or run: source ~/.bashrc"
 echo ""
