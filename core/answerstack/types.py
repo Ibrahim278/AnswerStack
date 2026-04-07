@@ -10,8 +10,8 @@ from typing import Any, Protocol, runtime_checkable
 class RerankerProtocol(Protocol):
     """Structural protocol for rerankers.
 
-    Both FlashRank Ranker and QwenRerankerAdapter satisfy this
-    protocol without needing to inherit from it.
+    FlashRank Ranker satisfies this protocol without needing
+    to inherit from it.
     """
 
     def rerank(self, request: Any) -> list[dict[str, Any]]: ...
