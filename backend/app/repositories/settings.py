@@ -23,7 +23,7 @@ SETTINGS_DEFAULTS = {
     "chunk_overlap": 250,
     "top_k": 5,
     "similarity_threshold": 0.3,
-    "reranker_enabled": True,
+    "reranker_enabled": False,
     "reasoning_effort": "none",
     "max_completion_tokens": None,
     "tts_provider": "",
