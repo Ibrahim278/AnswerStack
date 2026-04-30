@@ -1,0 +1,19 @@
+This is a sample text document for testing the AnswerStack document processing pipeline.
+
+It contains multiple paragraphs to verify that the text parser correctly handles plain text content and that the chunking system can split the text at appropriate boundaries.
+
+The document processing pipeline is responsible for taking uploaded documents, parsing their content into plain text, and then splitting that text into appropriately-sized chunks for vector embedding and retrieval.
+
+Each chunk should be small enough to provide focused context to the language model, but large enough to contain meaningful information. The recursive text splitter achieves this by trying to split on natural boundaries like paragraph breaks first, then falling back to line breaks, sentences, and words.
+
+When a user uploads a document, the system first validates the file type and size, then sanitizes the filename to prevent security issues like path traversal attacks. The file is stored on disk and a database record is created to track the document through its lifecycle.
+
+The document lifecycle includes several states: uploaded (just received), parsing (text extraction in progress), parsed (text extracted successfully), indexing (vector embeddings being generated), indexed (ready for retrieval), failed (an error occurred), stale (the index is out of date), and reindex_required (the document needs to be re-indexed due to settings changes).
+
+After parsing, the document text is split into chunks using the recursive text splitter. Each chunk is stored in the database with its position index and character count. For PDF documents, the page number is also tracked to enable source attribution in the retrieval results.
+
+The chunking strategy uses configurable parameters: chunk_size controls the maximum number of characters per chunk (default 4000, approximately 1000 tokens), and chunk_overlap controls how many characters from the end of each chunk are prepended to the beginning of the next chunk (default 800, approximately 200 tokens). This overlap ensures that important context spanning chunk boundaries is not lost during retrieval.
+
+This sample document is intentionally verbose to provide enough text content for meaningful testing of the chunking algorithm. The multiple paragraphs allow verification that the splitter preferentially breaks at paragraph boundaries when possible.
+
+The final paragraph serves as a conclusion to this test document. It demonstrates that the text parser can handle multi-paragraph documents without any issues, preserving all content including special characters like dashes (--), ampersands (&), and quotation marks ("example").

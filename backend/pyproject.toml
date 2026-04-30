@@ -1,0 +1,46 @@
+[project]
+name = "answerstack-backend"
+version = "0.1.0"
+description = "AnswerStack - Source-grounded question answering with trustworthy attribution"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "answerstack",
+    "aiosqlite>=0.22.1",
+    "alembic>=1.18.4",
+    "fastapi>=0.135.2",
+    "piper-tts>=1.4.1",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
+    "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.22",
+    "sqlalchemy[asyncio]>=2.0.48",
+    "sse-starlette>=3.3.3",
+    "structlog>=25.5.0",
+    "uvicorn[standard]>=0.42.0",
+    "httpx>=0.28.1",
+]
+
+[tool.uv.sources]
+answerstack = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.7",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
