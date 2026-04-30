@@ -1,0 +1,79 @@
+Q#,Question,Answer (truncated),Source 1 Name,Source 1 Similarity,Source 1 Relevant (0/1),Source 2 Name,Source 2 Similarity,Source 2 Relevant (0/1),Source 3 Name,Source 3 Similarity,Source 3 Relevant (0/1),Correctness (1-5),Groundedness (1-5),Notes
+1,What is the difference between Natural Language Understanding (NLU) and Natural Language Generation (NLG)?,"Based on the provided sources, the difference between Natural Language Understanding (NLU) and Natural Language Generation (NLG) is defined as follows:
+
+*   **Natural Language Understanding (NLU)**: This is defined as the system **comprehending input text** [Source 1][Source 3].
+*   **Natural Langua",lecture1.md,0.7865,1,lecture1.md,0.6692,0,lecture1.md,0.6662,1,5,5,All top-3 sources from lecture1.md contain NLU/NLG definitions and examples. Answer accurately reflects chunk content with no external additions.
+2,Explain Zipf's Law and its relevance to word frequency distributions in natural language.,"Zipf's Law states that in any text, word frequency is inversely proportional to word rank, expressed by the formula $f(w) \propto \frac{1}{r}$, where $f(w)$ is the frequency of word $w$ and $r$ is its rank. This means that as the rank of a word increases, its frequency decreases.
+
+The most frequent ",lecture1.md,0.6113,1,lecture1.md,0.5651,1,lecture3.md,0.5636,0,5,5,Sources 1-2 directly cover Zipf's Law with formula and examples. Source 3 about term bias is tangentially related. Answer is accurate and fully grounded.
+3,What are the three main types of ambiguity discussed in the context of NLP?,"The three main types of ambiguity discussed in the context of NLP are:
+
+1.  **Lexical Ambiguity**: This refers to words with multiple meanings depending on the context, such as ""bass"" (a type of fish OR low-frequency sound) and ""bank"" (the side of a river OR a financial institution) [Source 1].
+2.  ",lecture1.md,0.6907,1,lecture1.md,0.5629,0,lecture1.md,0.5531,0,5,5,Only Source 1 contains all three ambiguity types. Sources 2-3 cover unrelated NLP topics. Answer is accurate and fully grounded in Source 1.
+4,"What is the difference between stemming and lemmatization, and when would you prefer one over the other?","Based on the provided sources, the differences between stemming and lemmatization are as follows:
+
+**Definition and Methodology**
+*   **Stemming** applies a set of rules to chop off the end of a word to produce its base form [Source 5]. It is a rule-based suffix stripping method [Source 2].
+*   **Le",lecture2.md,0.7291,1,lecture2.md,0.6837,1,lecture2.md,0.6697,1,5,5,All top-3 sources directly cover stemming vs lemmatization comparison. Answer is thorough and every claim is traceable to chunks.
+5,Describe the steps involved in the NLP development lifecycle.,"Based on the provided source documents, the NLP development lifecycle follows a methodology similar to the software engineering development lifecycle (comparable to the waterfall model or Agile). The step-by-step breakdown is as follows [Source 1]:
+
+1.  **Understand the problem and gather requiremen",lecture2.md,0.724,1,lecture1.md,0.6563,0,lecture1.md,0.635,0,4,5,Only Source 1 contains the lifecycle steps; Sources 2-3 are NLU/NLG. Answer covers first 4 steps accurately but is truncated missing later steps from the chunk.
+6,What is Named Entity Recognition (NER) and what types of entities does it typically identify?,"**Named Entity Recognition (NER)** is a process that identifies and tags named entities in text [Source 1].
+
+Typically, NER identifies the following types of entities:
+*   People
+*   Places
+*   Organizations
+*   Phone numbers
+*   Emails [Source 1]
+
+NER is used for information extraction to pull stru",lecture2.md,0.696,1,lecture2.md,0.588,1,lecture1.md,0.5559,0,5,5,Sources 1-2 contain NER definition and code examples. Source 3 is unrelated. Answer is accurate and fully grounded in the chunk content.
+7,How does TF-IDF improve upon a simple Bag of Words representation?,"Based on the provided sources, TF-IDF improves upon the simple Bag of Words (BoW) representation in the following ways:
+
+*   **Reduces Influence of Common Words:** BoW treats every word as a simple count, meaning common words (like ""the"" or ""a"") can dominate the representation and obscure the import",lecture3.md,0.7323,1,lecture3.md,0.7205,1,lecture3.md,0.7172,1,5,5,All top-3 sources directly cover TF-IDF key idea and comparison with BoW. Answer is accurate and every claim is supported by chunks.
+8,Write the formula for cosine similarity and explain why it is preferred over Euclidean distance for text comparison.,"The formula for cosine similarity is:
+
+$$\text{cosine similarity}(\vec{A}, \vec{B}) = \frac{\vec{A} \cdot \vec{B}}{\|\vec{A}\| \times \|\vec{B}\|}$$ [Source 1] [Source 2]
+
+Cosine similarity is preferred over Euclidean distance for text comparison for the following reasons:
+
+- **Direction Considerati",lecture3.md,0.7118,1,lecture3.md,0.697,1,lecture3.md,0.6956,1,4,5,All sources cover cosine similarity formula and Euclidean comparison. Minor inaccuracy: echoes chunk claim that cosine considers magnitude+direction when cosine actually normalizes out magnitude. Fully grounded.
+9,What is One Hot Encoding and what are its main limitations for representing words?,"**One Hot Encoding** is a binary vector representation where each token receives a **1** if it exists in the text and a **0** if it does not. The dimension of the resulting vector is determined by the number of unique vocabulary items [Source 1].
+
+Its main limitations are:
+*   **High dimensionality*",lecture3.md,0.7591,1,lecture3.md,0.6863,1,lecture3.md,0.6834,1,4,5,All sources cover OHE definition and limitations. Answer is accurate but repetitive and omits the lack of semantic understanding limitation present in chunks.
+10,Explain the distributional hypothesis and how it motivates word embeddings.,"The distributional hypothesis posits that words appearing in similar contexts are similar in meaning. This concept, alongside distributional similarity (the idea that a word's meaning can be understood from its context), served as the starting point for creating word embedding systems.
+
+Word embeddi",lecture4.md,0.6965,1,lecture4.md,0.6293,1,lecture4.md,0.5963,0,5,5,All sources from lecture4.md directly cover the distributional hypothesis and word embedding foundations. Answer is accurate and grounded.
+11,What are the key differences between CBOW and Skip-gram in Word2Vec?,"Based on the provided documents, the key differences between CBOW and Skip-gram in Word2Vec are as follows:
+
+**Input and Output**
+*   **CBOW:** Uses context words as input and predicts the target (center) word [Source 1], [Source 3].
+*   **Skip-gram:** Uses the target (center) word as input and pred",lecture4.md,0.7612,1,lecture4.md,0.7413,1,lecture4.md,0.7226,1,5,5,All sources directly cover CBOW vs Skip-gram with detailed comparison tables and architecture descriptions. Answer is thorough and well-grounded.
+12,How does FastText handle out-of-vocabulary words differently from Word2Vec?,"FastText handles out-of-vocabulary (OOV) words by generating **approximate vectors** derived from character n-grams, whereas Word2Vec does not handle OOV words and assigns them a **vector of zeros**.
+
+**FastText Approach:**
+- It divides each word into **character n-grams** (subword units of 3 to 6 c",lecture4.md,0.7801,1,lecture4.md,0.7447,1,lecture4.md,0.7372,1,5,5,All sources directly cover FastText character n-grams and OOV handling vs Word2Vec. Answer is accurate and every claim is traceable to chunks.
+13,"Describe how the word analogy task (e.g., king - man + woman ≈ queen) demonstrates the properties of word embeddings.","The word analogy task demonstrates that word embeddings capture **semantic meaning** by placing semantically related words in consistent geometric relationships within a multi-dimensional vector space. Specifically:
+
+- If the embedding representation truly captures semantic meaning, then the **dista",lecture4.md,0.6979,1,lecture4.md,0.6472,1,lecture4.md,0.6391,0,5,5,All sources cover word analogy examples and evaluation methods. Answer is accurate and well-grounded in the chunk content.
+14,What is a language model and how do n-gram models estimate the probability of a word sequence?,"A **language model** predicts the next word in a sequence given the previous words. It is described as a **probability model** that computes a probability distribution over all words in the vocabulary, where the word with the **highest probability** is the predicted word [Source 1], [Source 3]. Math",lecture5.md,0.7945,1,lecture5.md,0.7056,1,lecture5.md,0.6667,1,5,5,All sources directly cover language models and n-gram probability with formulas and worked examples. Answer is thorough and every claim is supported.
+15,Explain the Markov assumption as it applies to n-gram language models.,"The **Markov assumption** states that a word $w_t$ depends only on the previous $n-1$ words, not the entire history [Source 1]. 
+
+In the context of n-gram models:
+*   For a **4-gram model** (where $n=4$), the model only looks at the last 3 words to predict the next word, rather than the entire seque",lecture5.md,0.7293,1,lecture5.md,0.718,1,lecture5.md,0.5883,1,5,5,All sources cover the Markov assumption with definition and 4-gram worked example. Answer is accurate and well-grounded.
+16,What is perplexity and how is it used to evaluate language models?,"Perplexity (PPL) is the standard evaluation metric for language models. It measures how confused a language model is when predicting the next word in a sentence [Source 1], [Source 2].
+
+**Key interpretations:**
+*   **Low perplexity:** The model predicts the text well, meaning the text is expected by",lecture5.md,0.7357,1,lecture6.md,0.7183,1,lecture6.md,0.5847,0,5,4,Sources 1-2 directly cover perplexity definition and formula. Source 3 tangential (GRU). Answer pads with averaging problem discussion from chunks but unrelated to perplexity.
+17,Explain the vanishing gradient problem in RNNs and how LSTM addresses it.,"The vanishing gradient problem occurs in Recurrent Neural Networks (RNNs) because the gradient at any given step is a product of all derivatives from subsequent steps. When many small numbers are multiplied together, the result approaches zero [Source 2]. This leads to two main consequences: the mod",lecture5.md,0.7605,1,lecture6.md,0.7437,1,lecture6.md,0.7263,1,5,5,All sources directly cover vanishing gradient and LSTM solution with formulas and examples. Answer is thorough and every claim grounded in chunks.
+18,"Describe the role of the forget gate, input gate, and output gate in an LSTM cell.","Based on the provided sources, here is the role of the forget gate, input gate, and output gate in an LSTM cell:
+
+**Forget Gate ($f_t$)**
+*   **Purpose:** It determines how much data to forget from the previous cell state and how much to keep [Source 2]. It decides what parts of the old state to era",lecture5.md,0.8227,1,lecture6.md,0.7999,1,lecture5.md,0.7876,1,5,5,All sources directly describe LSTM gates with formulas and step-by-step computation. Answer is thorough and every claim is traceable to chunks.
+19,What is the bottleneck problem in Seq2Seq models and how does the attention mechanism solve it?,"The **bottleneck problem** in Seq2Seq models arises because the encoder must compress the **entire** source sentence into a **single fixed-length vector**. This creates an information bottleneck where the encoding must capture all information about the source sentence, which becomes increasingly dif",lecture6.md,0.7351,1,lecture6.md,0.6106,1,lecture5.md,0.6005,0,5,5,Sources 1-2 directly cover bottleneck problem and attention mechanism steps. Source 3 about vanishing gradient is tangentially related. Answer is accurate and grounded.
+20,Trace the evolution of text representation from Bag of Words to word embeddings to contextual models like transformers. What key limitation does each successive approach address?,"Based on the provided sources, the evolution of text representation addresses the following limitations at each stage:
+
+**1. From Bag of Words (Count-Based) to Word Embeddings**
+*   **Count-Based Representation Limitations:**
+    *   **High dimensionality:** The vector dimension equals the vocabular",lecture4.md,0.7136,1,lecture6.md,0.6784,1,lecture4.md,0.6701,1,4,5,Sources cover embedding limitations and evolution across lectures. Answer accurately traces evolution but transformer section is thin. All claims grounded in chunks.

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROS2 Web Camera</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #00d4ff;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        video {
+            width: 100%;
+            display: block;
+            transform: scaleX(-1); /* Mirror for natural interaction */
+        }
+
+        canvas {
+            display: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #startBtn {
+            background: #00d4ff;
+            color: #000;
+        }
+
+        #startBtn:hover:not(:disabled) {
+            background: #00a8cc;
+        }
+
+        #stopBtn {
+            background: #ff4757;
+            color: #fff;
+        }
+
+        #stopBtn:hover:not(:disabled) {
+            background: #cc3a47;
+        }
+
+        .status {
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .status.connected {
+            background: #2ed573;
+            color: #000;
+        }
+
+        .status.disconnected {
+            background: #ff4757;
+        }
+
+        .status.waiting {
+            background: #ffa502;
+            color: #000;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            width: 100%;
+        }
+
+        .stat {
+            background: #2a2a4a;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        .settings {
+            background: #2a2a4a;
+            padding: 20px;
+            border-radius: 8px;
+            width: 100%;
+        }
+
+        .settings h3 {
+            margin-bottom: 15px;
+            color: #00d4ff;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .setting-row label {
+            flex: 1;
+        }
+
+        .setting-row select,
+        .setting-row input {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #1a1a2e;
+            color: #eee;
+            width: 150px;
+        }
+
+        @media (max-width: 600px) {
+            .stats {
+                grid-template-columns: 1fr;
+            }
+
+            .setting-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+
+            .setting-row select,
+            .setting-row input {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ROS2 Web Camera</h1>
+
+        <div class="status disconnected" id="status">Not Connected</div>
+
+        <div class="video-container">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn">Start Streaming</button>
+            <button id="stopBtn" disabled>Stop Streaming</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="fps">0</div>
+                <div class="stat-label">FPS</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="frames">0</div>
+                <div class="stat-label">Frames Sent</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="resolution">-</div>
+                <div class="stat-label">Resolution</div>
+            </div>
+        </div>
+
+        <div class="settings">
+            <h3>Settings</h3>
+            <div class="setting-row">
+                <label for="camera">Camera:</label>
+                <select id="camera"></select>
+            </div>
+            <div class="setting-row">
+                <label for="targetFps">Target FPS:</label>
+                <select id="targetFps">
+                    <option value="5">5 FPS</option>
+                    <option value="10" selected>10 FPS</option>
+                    <option value="15">15 FPS</option>
+                    <option value="30">30 FPS</option>
+                </select>
+            </div>
+            <div class="setting-row">
+                <label for="quality">JPEG Quality:</label>
+                <select id="quality">
+                    <option value="0.5">Low (50%)</option>
+                    <option value="0.7" selected>Medium (70%)</option>
+                    <option value="0.85">High (85%)</option>
+                    <option value="0.95">Very High (95%)</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDiv = document.getElementById('status');
+        const fpsDisplay = document.getElementById('fps');
+        const framesDisplay = document.getElementById('frames');
+        const resolutionDisplay = document.getElementById('resolution');
+        const cameraSelect = document.getElementById('camera');
+        const targetFpsSelect = document.getElementById('targetFps');
+        const qualitySelect = document.getElementById('quality');
+
+        let stream = null;
+        let streaming = false;
+        let frameCount = 0;
+        let lastFpsTime = Date.now();
+        let fpsFrameCount = 0;
+
+        // Get server URL (same host, could be different port)
+        const serverUrl = window.location.origin;
+
+        // Enumerate cameras
+        async function getCameras() {
+            try {
+                // Need to request permission first to get device labels
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                tempStream.getTracks().forEach(track => track.stop());
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+                cameraSelect.innerHTML = '';
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Camera ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+            } catch (err) {
+                console.error('Error enumerating cameras:', err);
+            }
+        }
+
+        async function startCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        deviceId: cameraSelect.value ? { exact: cameraSelect.value } : undefined,
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+
+                await video.play();
+
+                // Set canvas size to match video
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                resolutionDisplay.textContent = `${video.videoWidth}x${video.videoHeight}`;
+
+                return true;
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                statusDiv.textContent = `Camera Error: ${err.message}`;
+                statusDiv.className = 'status disconnected';
+                return false;
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+        }
+
+        async function sendFrame() {
+            if (!streaming || !stream) return;
+
+            // Draw video frame to canvas (flip horizontally to match display)
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, -canvas.width, 0);
+            ctx.restore();
+
+            // Convert to JPEG
+            const quality = parseFloat(qualitySelect.value);
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+            try {
+                const response = await fetch(`${serverUrl}/frame`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ frame: dataUrl })
+                });
+
+                if (response.ok) {
+                    frameCount++;
+                    fpsFrameCount++;
+                    framesDisplay.textContent = frameCount;
+
+                    // Update FPS every second
+                    const now = Date.now();
+                    if (now - lastFpsTime >= 1000) {
+                        fpsDisplay.textContent = fpsFrameCount;
+                        fpsFrameCount = 0;
+                        lastFpsTime = now;
+                    }
+
+                    if (statusDiv.className !== 'status connected') {
+                        statusDiv.textContent = 'Streaming to ROS2';
+                        statusDiv.className = 'status connected';
+                    }
+                } else {
+                    throw new Error('Server error');
+                }
+            } catch (err) {
+                console.error('Error sending frame:', err);
+                statusDiv.textContent = 'Connection Error';
+                statusDiv.className = 'status disconnected';
+            }
+
+            // Schedule next frame
+            if (streaming) {
+                const targetFps = parseInt(targetFpsSelect.value);
+                setTimeout(sendFrame, 1000 / targetFps);
+            }
+        }
+
+        startBtn.addEventListener('click', async () => {
+            startBtn.disabled = true;
+            statusDiv.textContent = 'Starting camera...';
+            statusDiv.className = 'status waiting';
+
+            if (await startCamera()) {
+                streaming = true;
+                stopBtn.disabled = false;
+                cameraSelect.disabled = true;
+
+                statusDiv.textContent = 'Streaming to ROS2';
+                statusDiv.className = 'status connected';
+
+                sendFrame();
+            } else {
+                startBtn.disabled = false;
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            streaming = false;
+            stopCamera();
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            cameraSelect.disabled = false;
+
+            statusDiv.textContent = 'Stopped';
+            statusDiv.className = 'status disconnected';
+            fpsDisplay.textContent = '0';
+        });
+
+        // Initialize
+        getCameras();
+    </script>
+</body>
+</html>
