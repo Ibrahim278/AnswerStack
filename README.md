@@ -1,8 +1,10 @@
 # AnswerStack
 
-A project-based RAG application for building knowledge bases from your documents. Upload files, build vector indexes, and ask questions with streamed answers and source citations. Supports speech-to-text and text-to-speech.
+AnswerStack is a self-hosted, project-based Retrieval-Augmented Generation (RAG) application that lets you build private knowledge bases from your own documents and query them through a conversational chat interface. Rather than relying on a general-purpose LLM with no awareness of your specific content, AnswerStack grounds every response in the documents you provide — returning streamed answers with inline source citations so you always know where the information came from.
 
-Single-user, self-hosted. SQLite for metadata, ChromaDB for vectors, local filesystem for document storage. Works with any OpenAI-compatible LLM provider.
+The application is organized around projects: each project has its own isolated document collection, vector index, and chat history, making it easy to maintain separate knowledge bases for different topics, teams, or use cases. Documents are parsed, chunked, and embedded into a ChromaDB vector store, then retrieved at query time using semantic search with optional FlashRank reranking to surface the most relevant passages. The full RAG pipeline runs through any OpenAI-compatible LLM provider, so you can point it at a cloud API or a locally hosted model without changing anything else.
+
+AnswerStack is designed to be simple to run and own: a single FastAPI backend, a React frontend, SQLite for metadata, and local filesystem storage for documents. There are no external services required beyond an LLM provider. Speech-to-text and text-to-speech are available as optional add-ons for a hands-free experience.
 
 ## Features
 
