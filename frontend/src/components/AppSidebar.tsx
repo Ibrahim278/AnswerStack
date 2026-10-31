@@ -64,10 +64,12 @@ export function AppSidebar() {
           </button>
         ) : (
           <>
-            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0 shadow-[0_0_18px_hsl(var(--primary)/0.35)]">
               <Layers className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-sidebar-fg-active text-sm tracking-tight">AnswerStack</span>
+            <span className="font-semibold text-sidebar-fg-active text-sm tracking-tight">
+              Answer<span className="text-primary">Stack</span>
+            </span>
             <button
               onClick={toggleSidebar}
               className="ml-auto text-sidebar-fg hover:text-sidebar-fg-active transition-colors"
@@ -101,7 +103,7 @@ export function AppSidebar() {
               to={item.to}
               className={cn(
                 'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors',
-                isActive ? 'bg-sidebar-hover text-sidebar-fg-active' : 'text-sidebar-fg hover:bg-sidebar-hover hover:text-sidebar-fg-active',
+                isActive ? 'bg-sidebar-hover text-primary shadow-[inset_2px_0_0_hsl(var(--primary))]' : 'text-sidebar-fg hover:bg-sidebar-hover hover:text-sidebar-fg-active',
                 sidebarCollapsed && 'justify-center'
               )}
             >

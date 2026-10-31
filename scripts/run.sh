@@ -38,10 +38,18 @@ cleanup() {
 trap cleanup INT TERM
 trap 'EXIT_CODE=$?; cleanup' EXIT
 
+start_backend() {
+    if ((${#SSL_ARGS[@]})); then
+        exec uv run python -m uvicorn app.main:app "$@" --host 0.0.0.0 --port 8000 "${SSL_ARGS[@]}"
+    else
+        exec uv run python -m uvicorn app.main:app "$@" --host 0.0.0.0 --port 8000
+    fi
+}
+
 case "$MODE" in
     dev)
         echo "Starting backend (port 8000)..."
-        (cd "$ROOT_DIR/backend" && exec uv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 "${SSL_ARGS[@]}") &
+        (cd "$ROOT_DIR/backend" && start_backend --reload) &
 
         echo "Starting frontend (port 8080)..."
         (cd "$ROOT_DIR/frontend" && exec bun run dev) &
@@ -52,7 +60,7 @@ case "$MODE" in
         echo "Press Ctrl+C to stop both."
         echo ""
 
-        wait -n 2>/dev/null
+        wait
         EXIT_CODE=$?
         ;;
     prod)
@@ -60,7 +68,7 @@ case "$MODE" in
         (cd "$ROOT_DIR/frontend" && bun run build)
 
         echo "Starting server (port 8000)..."
-        (cd "$ROOT_DIR/backend" && exec uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 "${SSL_ARGS[@]}") &
+        (cd "$ROOT_DIR/backend" && start_backend) &
 
         echo ""
         echo "App: $PROTOCOL://localhost:8000"

@@ -158,7 +158,7 @@ export default function ProjectsPage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ delay: idx * 0.05 }}
-                  className="group relative bg-card rounded-lg border border-border p-5 shadow-raised hover:shadow-elevated transition-shadow cursor-pointer"
+                  className="group relative tech-panel rounded-lg p-5 hover:border-primary/40 hover:shadow-elevated transition-all cursor-pointer"
                   onClick={() => selectProject(project)}
                 >
                   <div className="flex items-start justify-between mb-3">
